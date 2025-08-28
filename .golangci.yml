@@ -1,0 +1,59 @@
+---
+
+# Reference:
+#   https://github.com/golangci/golangci-lint/blob/HEAD/.golangci.reference.yml
+# JSON schema:
+#   https://golangci-lint.run/jsonschema/golangci.jsonschema.json
+
+version: "2"
+
+formatters:
+
+  enable:
+    - golines # line length
+    - goimports # import order
+    - gofmt # formatting
+    - gci # stricter import order
+
+  settings:
+    golines:
+      max-len: 120
+
+    gci:
+      custom-order: true
+      sections:
+        - standard # Captures all standard packages.
+        - default # Contains all imports that could not be matched to another section type.
+        - localmodule # Contains all local packages.
+        - blank # Contains all blank imports.
+        - dot # Contains all dot imports.
+
+linters:
+  # Default set of linters.
+  # The value can be: `standard`, `all`, `none`, or `fast`.
+  # Default: standard
+  default: standard
+
+  # https://golangci-lint.run/usage/linters/#enabled-by-default
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - sloglint
+
+  # https://golangci-lint.run/usage/linters/#disabled-by-default
+  disable:
+    - asasalint
+
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+    sloglint:
+      key-naming-case: snake
+
+  exclusions:
+    warn-unused: true

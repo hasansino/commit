@@ -1,0 +1,26 @@
+# os
+.DS_Store
+
+# ide
+.idea/
+.vscode
+
+# goreleaser
+dist/
+
+# artifacts
+build/
+
+# agentenv
+.agentenv/
+.claude/
+.mcp.json
+CLAUDE.md
+.gemini/
+GEMINI.md
+.crush/
+.crush.json
+CRUSH.md
+.github/copilot-instructions.md
+.github/.copilot.mcp.json
+CONVENTIONS.md

@@ -1,0 +1,51 @@
+---
+
+name: unit-tests
+
+# Unit tests.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs_on:
+        required: true
+        type: string
+        default: ubuntu-latest
+        description: 'runs_on'
+      continue_on_error:
+        required: true
+        type: boolean
+        default: false
+        description: 'continue_on_error'
+  workflow_call:
+    inputs:
+      runs_on:
+        required: true
+        type: string
+      continue_on_error:
+        required: true
+        type: boolean
+
+permissions: {}
+
+jobs:
+  unit-tests:
+    name: unit-tests
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    permissions:
+      contents: read
+    # ----
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+      - name: 'Setup Go'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: 'Download Go modules'
+        run: go mod download
+      - name: 'Run unit tests with race detector'
+        run: go list ./... | grep -v '/tests/' | xargs go test -count=1 -v -race
+        env:
+          CGO_ENABLED: 1 # needed for -race

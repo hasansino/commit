@@ -1,0 +1,130 @@
+---
+
+version: 2
+
+project_name: commit
+
+before:
+  hooks:
+    - make setup
+
+builds:
+  - id: commit
+    main: .
+    binary: commit
+    env:
+      - CGO_ENABLED=0
+      - SOURCE_DATE_EPOCH=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags:
+      - -v
+      - -trimpath
+      - -buildvcs=false
+    ldflags:
+      - -s -w
+      - -X github.com/hasansino/commit/internal/version.xBuildVersion={{ .Version }}
+
+archives:
+  - id: commit
+    name_template: >-
+      {{ .ProjectName }}_ {{- .Version }}_ {{- if eq .Os "darwin" }}macOS{{ else }}{{ .Os }}{{ end }}_ {{- if eq .Arch "amd64"
+      }}x86_64 {{- else if eq .Arch "386" }}i386 {{- else }}{{ .Arch }}{{ end }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+
+nfpms:
+  - id: commit-packages
+    package_name: commit
+    vendor: hasansino
+    homepage: https://github.com/hasansino/commit
+    maintainer: hasansino <hasansino@users.noreply.github.com>
+    description: Commit helper tool
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    dependencies:
+      - git
+    recommends:
+      - golang
+    section: utils
+    priority: optional
+    file_name_template: >-
+      {{ .PackageName }}_ {{- .Version }}_ {{- if eq .Os "darwin" }}macOS{{ else }}{{ .Os }}{{ end }}_ {{- if eq .Arch "amd64"
+      }}x86_64 {{- else if eq .Arch "386" }}i386 {{- else if eq .Arch "arm64" }}aarch64 {{- else }}{{ .Arch }}{{ end }}
+    contents:
+      - src: LICENSE
+        dst: /usr/share/licenses/commit/LICENSE
+      - src: README.md
+        dst: /usr/share/doc/commit/README.md
+    deb:
+      lintian_overrides:
+        - statically-linked-binary
+        - changelog-file-missing-in-native-package
+    rpm:
+      group: Applications/System
+      compression: xz
+    apk:
+      signature:
+        key_file: ""
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: 'Changes'
+      order: 999
+
+release:
+  github:
+    owner: hasansino
+    name: commit
+  prerelease: auto
+  make_latest: true
+  name_template: "{{.ProjectName}} v{{.Version}}"
+
+# generate SBOMs for archives
+sboms:
+  - artifacts: archive
+
+# sign checksums.txt
+signs:
+  - cmd: cosign
+    certificate: ""
+    args:
+      - "sign-blob"
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
