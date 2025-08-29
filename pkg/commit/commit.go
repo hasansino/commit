@@ -62,6 +62,10 @@ func (s *Service) Execute(ctx context.Context) error {
 		return fmt.Errorf("no api keys found in environment")
 	}
 
+	if !s.gitOps.IsGitRepository() {
+		return fmt.Errorf("not a git repository")
+	}
+
 	s.logger.DebugContext(ctx, "Unstaging all files...")
 
 	if err := s.gitOps.UnstageAll(); err != nil {

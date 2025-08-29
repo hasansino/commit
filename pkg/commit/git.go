@@ -840,3 +840,8 @@ func shouldIncludeFile(file string, patterns []string) bool {
 	}
 	return false
 }
+
+func (g *gitOperations) IsGitRepository() bool {
+	_, err := g.repo.Head()
+	return err == nil
+}
