@@ -15,8 +15,8 @@ const defaultRepoPath = "."
 type Service struct {
 	logger    *slog.Logger
 	settings  *Settings
-	gitOps    *GitOperations
-	aiService *AIService
+	gitOps    *gitOperations
+	aiService *aiService
 	modules   []moduleAccessor
 }
 
@@ -44,7 +44,7 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 	}
 
 	svc.gitOps = git
-	svc.aiService = NewAIService(svc.logger, settings.Timeout)
+	svc.aiService = newAIService(svc.logger, settings.Timeout)
 
 	for _, name := range settings.Modules {
 		switch name {

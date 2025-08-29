@@ -25,13 +25,13 @@ var promptFormatSingle string
 //go:embed prompt-format-multi.md
 var promptFormatMulti string
 
-type AIService struct {
+type aiService struct {
 	logger    *slog.Logger
 	timeout   time.Duration
 	providers map[string]providerAccessor
 }
 
-func NewAIService(logger *slog.Logger, timeout time.Duration) *AIService {
+func newAIService(logger *slog.Logger, timeout time.Duration) *aiService {
 	providerList := make(map[string]providerAccessor)
 
 	if openaiProvider := openai.NewOpenAI(); openaiProvider.IsAvailable() {
@@ -44,18 +44,18 @@ func NewAIService(logger *slog.Logger, timeout time.Duration) *AIService {
 		providerList[geminiProvider.Name()] = geminiProvider
 	}
 
-	return &AIService{
+	return &aiService{
 		logger:    logger,
 		timeout:   timeout,
 		providers: providerList,
 	}
 }
 
-func (s *AIService) GetProviders() map[string]providerAccessor {
+func (s *aiService) GetProviders() map[string]providerAccessor {
 	return s.providers
 }
 
-func (s *AIService) FilterProviders(requested []string) map[string]providerAccessor {
+func (s *aiService) FilterProviders(requested []string) map[string]providerAccessor {
 	if len(requested) == 0 {
 		return s.providers
 	}
@@ -68,7 +68,7 @@ func (s *AIService) FilterProviders(requested []string) map[string]providerAcces
 	return filtered
 }
 
-func (s *AIService) GenerateCommitMessages(
+func (s *aiService) GenerateCommitMessages(
 	ctx context.Context,
 	diff, branch string, files []string,
 	providers []string, customPrompt string,
@@ -158,7 +158,7 @@ func (s *AIService) GenerateCommitMessages(
 	return results, nil
 }
 
-func (s *AIService) buildPrompt(diff, branch string, files []string, multiLine bool) string {
+func (s *aiService) buildPrompt(diff, branch string, files []string, multiLine bool) string {
 	injectFormat := promptFormatSingle
 	if multiLine {
 		injectFormat = promptFormatMulti
@@ -171,7 +171,7 @@ func (s *AIService) buildPrompt(diff, branch string, files []string, multiLine b
 	return result
 }
 
-func (s *AIService) buildCustomPrompt(prompt string, diff, branch string, files []string) string {
+func (s *aiService) buildCustomPrompt(prompt string, diff, branch string, files []string) string {
 	result := strings.ReplaceAll(prompt, "{branch}", branch)
 	result = strings.ReplaceAll(result, "{files}", strings.Join(files, ", "))
 	result = strings.ReplaceAll(result, "{diff}", diff)

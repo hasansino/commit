@@ -20,11 +20,11 @@ import (
 	"golang.org/x/term"
 )
 
-type GitOperations struct {
+type gitOperations struct {
 	repo *git.Repository
 }
 
-type GitConfig struct {
+type gitConfig struct {
 	UserName   string
 	UserEmail  string
 	GPGSign    bool
@@ -32,20 +32,20 @@ type GitConfig struct {
 	GPGProgram string
 }
 
-// SemVer represents a semantic version
-type SemVer struct {
+// semVer represents a semantic version
+type semVer struct {
 	Major int
 	Minor int
 	Patch int
 }
 
-// GPGSigner implements the go-git Signer interface using gpg command
-type GPGSigner struct {
+// gpgSigner implements the go-git Signer interface using gpg command
+type gpgSigner struct {
 	gpgProgram string
 	keyID      string
 }
 
-func (g *GPGSigner) Sign(message io.Reader) ([]byte, error) {
+func (g *gpgSigner) Sign(message io.Reader) ([]byte, error) {
 	// Read the message to be signed
 	messageBytes, err := io.ReadAll(message)
 	if err != nil {
@@ -64,7 +64,7 @@ func (g *GPGSigner) Sign(message io.Reader) ([]byte, error) {
 	return output, nil
 }
 
-func newGitOperations(repoPath string) (*GitOperations, error) {
+func newGitOperations(repoPath string) (*gitOperations, error) {
 	repo, err := git.PlainOpenWithOptions(repoPath, &git.PlainOpenOptions{
 		DetectDotGit: true,
 	})
@@ -72,12 +72,12 @@ func newGitOperations(repoPath string) (*GitOperations, error) {
 		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
 
-	return &GitOperations{repo: repo}, nil
+	return &gitOperations{repo: repo}, nil
 }
 
 // GetConfig reads git configuration - fails if user.name or user.email not configured
-func (g *GitOperations) GetConfig() (*GitConfig, error) {
-	config := &GitConfig{
+func (g *gitOperations) GetConfig() (*gitConfig, error) {
+	config := &gitConfig{
 		GPGSign:    false,
 		GPGProgram: "gpg",
 	}
@@ -110,7 +110,7 @@ func (g *GitOperations) GetConfig() (*GitConfig, error) {
 }
 
 // getConfigValue reads a specific git config value using git command
-func (g *GitOperations) getConfigValue(key string) string {
+func (g *gitOperations) getConfigValue(key string) string {
 	cmd := exec.Command("git", "config", key)
 	output, err := cmd.Output()
 	if err != nil {
@@ -120,7 +120,7 @@ func (g *GitOperations) getConfigValue(key string) string {
 }
 
 // getGlobalGitignoreFile reads core.excludesFile from git config and returns the absolute path
-func (g *GitOperations) getGlobalGitignoreFile() (string, error) {
+func (g *gitOperations) getGlobalGitignoreFile() (string, error) {
 	excludesFile := g.getConfigValue("core.excludesFile")
 	if excludesFile == "" {
 		return "", nil // No global gitignore configured
@@ -184,7 +184,7 @@ func parseGitignoreFile(filePath string) ([]string, error) {
 	return patterns, nil
 }
 
-func (g *GitOperations) GetCurrentBranch() (string, error) {
+func (g *gitOperations) GetCurrentBranch() (string, error) {
 	head, err := g.repo.Head()
 	if err != nil {
 		return "", fmt.Errorf("failed to get HEAD: %w", err)
@@ -194,7 +194,7 @@ func (g *GitOperations) GetCurrentBranch() (string, error) {
 	return branchName, nil
 }
 
-func (g *GitOperations) GetWorkingTreeStatus() (git.Status, error) {
+func (g *gitOperations) GetWorkingTreeStatus() (git.Status, error) {
 	worktree, err := g.repo.Worktree()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get worktree: %w", err)
@@ -208,7 +208,7 @@ func (g *GitOperations) GetWorkingTreeStatus() (git.Status, error) {
 	return status, nil
 }
 
-func (g *GitOperations) UnstageAll() error {
+func (g *gitOperations) UnstageAll() error {
 	worktree, err := g.repo.Worktree()
 	if err != nil {
 		return fmt.Errorf("failed to get worktree: %w", err)
@@ -225,7 +225,7 @@ func (g *GitOperations) UnstageAll() error {
 	return nil
 }
 
-func (g *GitOperations) StageFiles(
+func (g *gitOperations) StageFiles(
 	excludePatterns []string,
 	includePatterns []string,
 	useGlobalGitignore bool,
@@ -268,7 +268,7 @@ func (g *GitOperations) StageFiles(
 }
 
 // Fast path: stage all modified files
-func (g *GitOperations) stageAllModified(worktree *git.Worktree) ([]string, error) {
+func (g *gitOperations) stageAllModified(worktree *git.Worktree) ([]string, error) {
 	// Get status first to return the list of staged files
 	status, err := worktree.Status()
 	if err != nil {
@@ -299,7 +299,7 @@ func (g *GitOperations) stageAllModified(worktree *git.Worktree) ([]string, erro
 }
 
 // Fast path: use glob patterns when possible
-func (g *GitOperations) stageWithGlob(worktree *git.Worktree, pattern string) ([]string, error) {
+func (g *gitOperations) stageWithGlob(worktree *git.Worktree, pattern string) ([]string, error) {
 	// Get status first to return the list of staged files
 	status, err := worktree.Status()
 	if err != nil {
@@ -330,7 +330,7 @@ func (g *GitOperations) stageWithGlob(worktree *git.Worktree, pattern string) ([
 }
 
 // Fallback: filtered staging for complex patterns
-func (g *GitOperations) stageFiltered(
+func (g *gitOperations) stageFiltered(
 	worktree *git.Worktree,
 	excludePatterns, includePatterns []string,
 	globalPatterns []string,
@@ -383,7 +383,7 @@ func isSimpleGlobPattern(pattern string) bool {
 		(strings.Contains(pattern, "*") || strings.Contains(pattern, "?"))
 }
 
-func (g *GitOperations) GetStagedDiff() (string, error) {
+func (g *gitOperations) GetStagedDiff() (string, error) {
 	// Use git diff --cached to get the actual staged diff
 	cmd := exec.Command("git", "diff", "--cached")
 	output, err := cmd.Output()
@@ -433,7 +433,7 @@ func (g *GitOperations) GetStagedDiff() (string, error) {
 	return diff, nil
 }
 
-func (g *GitOperations) CreateCommit(message string) error {
+func (g *gitOperations) CreateCommit(message string) error {
 	// Get git configuration
 	config, err := g.GetConfig()
 	if err != nil {
@@ -486,7 +486,7 @@ func (g *GitOperations) CreateCommit(message string) error {
 }
 
 // isGPGAgentAvailable checks if gpg-agent is running
-func (g *GitOperations) isGPGAgentAvailable(gpgProgram string) bool {
+func (g *gitOperations) isGPGAgentAvailable(gpgProgram string) bool {
 	// Check if GPG_AGENT_INFO is set (older GPG versions)
 	if os.Getenv("GPG_AGENT_INFO") != "" {
 		return true
@@ -499,7 +499,7 @@ func (g *GitOperations) isGPGAgentAvailable(gpgProgram string) bool {
 }
 
 // createGPGSigner creates a GPG signer that uses gpg-agent's cached credentials
-func (g *GitOperations) createGPGSigner(config *GitConfig) (*GPGSigner, error) {
+func (g *gitOperations) createGPGSigner(config *gitConfig) (*gpgSigner, error) {
 	// Verify that the key exists and is available
 	cmd := exec.Command(config.GPGProgram, "--list-secret-keys", config.SigningKey)
 	err := cmd.Run()
@@ -507,14 +507,14 @@ func (g *GitOperations) createGPGSigner(config *GitConfig) (*GPGSigner, error) {
 		return nil, fmt.Errorf("signing key %s not found or not available", config.SigningKey)
 	}
 
-	return &GPGSigner{
+	return &gpgSigner{
 		gpgProgram: config.GPGProgram,
 		keyID:      config.SigningKey,
 	}, nil
 }
 
 // loadKeyDirectly loads key directly from keyring (fallback method)
-func (g *GitOperations) loadKeyDirectly(config *GitConfig) (*openpgp.Entity, error) {
+func (g *gitOperations) loadKeyDirectly(config *gitConfig) (*openpgp.Entity, error) {
 	// Try to get GPG key from user's keyring
 	keyring, err := g.getGPGKeyring(config.GPGProgram)
 	if err != nil {
@@ -540,7 +540,7 @@ func (g *GitOperations) loadKeyDirectly(config *GitConfig) (*openpgp.Entity, err
 }
 
 // getGPGKeyring reads the user's GPG keyring
-func (g *GitOperations) getGPGKeyring(gpgProgram string) (openpgp.EntityList, error) {
+func (g *gitOperations) getGPGKeyring(gpgProgram string) (openpgp.EntityList, error) {
 	// Get GPG home directory
 	gpgHome := os.Getenv("GNUPGHOME")
 	if gpgHome == "" {
@@ -569,7 +569,7 @@ func (g *GitOperations) getGPGKeyring(gpgProgram string) (openpgp.EntityList, er
 }
 
 // exportGPGKeys exports GPG keys using the gpg command
-func (g *GitOperations) exportGPGKeys(gpgProgram string) (openpgp.EntityList, error) {
+func (g *gitOperations) exportGPGKeys(gpgProgram string) (openpgp.EntityList, error) {
 	// Export secret keys in ASCII armor format
 	cmd := exec.Command(gpgProgram, "--export-secret-keys", "--armor")
 	output, err := cmd.Output()
@@ -582,7 +582,7 @@ func (g *GitOperations) exportGPGKeys(gpgProgram string) (openpgp.EntityList, er
 }
 
 // matchesSigningKey checks if a GPG entity matches the signing key identifier
-func (g *GitOperations) matchesSigningKey(entity *openpgp.Entity, signingKey string) bool {
+func (g *gitOperations) matchesSigningKey(entity *openpgp.Entity, signingKey string) bool {
 	// Check primary key ID (full or short form)
 	primaryKeyID := fmt.Sprintf("%016X", entity.PrimaryKey.KeyId)
 	if strings.HasSuffix(primaryKeyID, strings.ToUpper(signingKey)) {
@@ -608,7 +608,7 @@ func (g *GitOperations) matchesSigningKey(entity *openpgp.Entity, signingKey str
 }
 
 // decryptPrivateKey prompts for passphrase and decrypts the GPG private key
-func (g *GitOperations) decryptPrivateKey(entity *openpgp.Entity, keyID string) error {
+func (g *gitOperations) decryptPrivateKey(entity *openpgp.Entity, keyID string) error {
 	fmt.Printf("Enter passphrase for GPG key %s: ", keyID)
 
 	// Read passphrase securely (without echoing to terminal)
@@ -687,7 +687,7 @@ func shouldExcludeFile(file string, excludePatterns []string, globalPatterns []s
 	return false
 }
 
-func (g *GitOperations) Push() error {
+func (g *gitOperations) Push() error {
 	// Get the current branch name
 	branch, err := g.GetCurrentBranch()
 	if err != nil {
@@ -705,7 +705,7 @@ func (g *GitOperations) Push() error {
 }
 
 // GetLatestTag retrieves the latest semver tag from the repository
-func (g *GitOperations) GetLatestTag() (string, error) {
+func (g *gitOperations) GetLatestTag() (string, error) {
 	// Get all tags from git
 	cmd := exec.Command("git", "tag", "-l", "v*")
 	output, err := cmd.Output()
@@ -749,21 +749,21 @@ func (g *GitOperations) GetLatestTag() (string, error) {
 	return validTags[0], nil
 }
 
-// parseSemVer parses a version string like "v1.2.3" into a SemVer struct
-func parseSemVer(version string) SemVer {
+// parseSemVer parses a version string like "v1.2.3" into a semVer struct
+func parseSemVer(version string) semVer {
 	// Remove 'v' prefix if present
 	version = strings.TrimPrefix(version, "v")
 
 	parts := strings.Split(version, ".")
 	if len(parts) != 3 {
-		return SemVer{0, 0, 0}
+		return semVer{0, 0, 0}
 	}
 
 	major, _ := strconv.Atoi(parts[0])
 	minor, _ := strconv.Atoi(parts[1])
 	patch, _ := strconv.Atoi(parts[2])
 
-	return SemVer{
+	return semVer{
 		Major: major,
 		Minor: minor,
 		Patch: patch,
@@ -771,12 +771,12 @@ func parseSemVer(version string) SemVer {
 }
 
 // IncrementVersion increments the version based on the increment type
-func (g *GitOperations) IncrementVersion(currentTag string, incrementType string) (string, error) {
-	var version SemVer
+func (g *gitOperations) IncrementVersion(currentTag string, incrementType string) (string, error) {
+	var version semVer
 
 	if currentTag == "" {
 		// Start with v0.0.0 if no tags exist
-		version = SemVer{0, 0, 0}
+		version = semVer{0, 0, 0}
 	} else {
 		version = parseSemVer(currentTag)
 	}
@@ -799,7 +799,7 @@ func (g *GitOperations) IncrementVersion(currentTag string, incrementType string
 }
 
 // CreateTag creates a new annotated tag
-func (g *GitOperations) CreateTag(tagName string, message string) error {
+func (g *gitOperations) CreateTag(tagName string, message string) error {
 	// Create annotated tag
 	cmd := exec.Command("git", "tag", "-a", tagName, "-m", message)
 	output, err := cmd.CombinedOutput()
@@ -810,7 +810,7 @@ func (g *GitOperations) CreateTag(tagName string, message string) error {
 }
 
 // PushTag pushes the tag to the remote repository
-func (g *GitOperations) PushTag(tagName string) error {
+func (g *gitOperations) PushTag(tagName string) error {
 	cmd := exec.Command("git", "push", "origin", tagName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
