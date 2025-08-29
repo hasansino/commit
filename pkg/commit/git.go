@@ -64,7 +64,7 @@ func (g *GPGSigner) Sign(message io.Reader) ([]byte, error) {
 	return output, nil
 }
 
-func NewGitOperations(repoPath string) (*GitOperations, error) {
+func newGitOperations(repoPath string) (*GitOperations, error) {
 	repo, err := git.PlainOpenWithOptions(repoPath, &git.PlainOpenOptions{
 		DetectDotGit: true,
 	})

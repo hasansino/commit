@@ -38,7 +38,7 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 		svc.logger = slog.New(slog.DiscardHandler)
 	}
 
-	git, err := NewGitOperations(defaultRepoPath)
+	git, err := newGitOperations(defaultRepoPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize git operations: %w", err)
 	}
