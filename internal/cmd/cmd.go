@@ -51,7 +51,8 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	flags := cmd.Flags()
 
 	flags.StringSliceVar(
-		&settings.Providers, "providers", []string{}, "Providers to use, leave empty to for all.")
+		&settings.Providers, "providers", []string{},
+		"Providers to use, leave empty to for all (claude|openai|gemini)")
 	flags.DurationVar(
 		&settings.Timeout, "timeout", 10*time.Second, "API timeout")
 	flags.StringVar(
