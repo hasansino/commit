@@ -41,13 +41,13 @@ func parseRemoteURL(remoteURL string) (*RemoteInfo, error) {
 		}
 
 		info.Host = u.Host
-		
+
 		// Extract owner and repo from path
 		pathParts := strings.Split(strings.Trim(u.Path, "/"), "/")
 		if len(pathParts) >= 2 {
 			info.Owner = pathParts[0]
 			info.Repo = strings.TrimSuffix(pathParts[1], ".git")
-			
+
 			// Handle GitLab subgroups (multiple path segments)
 			if strings.Contains(info.Host, "gitlab") && len(pathParts) > 2 {
 				// For GitLab, owner can be a nested group
@@ -62,7 +62,7 @@ func parseRemoteURL(remoteURL string) (*RemoteInfo, error) {
 		sshPattern := regexp.MustCompile(`^(?:ssh://)?(?:git@)?([^:/]+)[:/](.+?)(?:\.git)?$`)
 		if matches := sshPattern.FindStringSubmatch(remoteURL); len(matches) == 3 {
 			info.Host = matches[1]
-			
+
 			// Split the path to handle both simple and nested paths
 			pathParts := strings.Split(matches[2], "/")
 			if len(pathParts) >= 2 {
@@ -91,14 +91,14 @@ func parseRemoteURL(remoteURL string) (*RemoteInfo, error) {
 // detectPlatform identifies the git platform from the host
 func detectPlatform(host string) GitPlatform {
 	lowerHost := strings.ToLower(host)
-	
+
 	if strings.Contains(lowerHost, "github") {
 		return PlatformGitHub
 	}
 	if strings.Contains(lowerHost, "gitlab") {
 		return PlatformGitLab
 	}
-	
+
 	return PlatformUnknown
 }
 
@@ -129,13 +129,13 @@ func generateMergeRequestURL(info *RemoteInfo, branch string, targetBranch strin
 		// https://gitlab.com/{owner}/{repo}/-/merge_requests/new?merge_request[source_branch]={branch}&merge_request[target_branch]={target}
 		baseURL := fmt.Sprintf("https://%s/%s/%s/-/merge_requests/new",
 			info.Host, info.Owner, info.Repo)
-		
+
 		params := url.Values{}
 		params.Set("merge_request[source_branch]", branch)
 		if targetBranch != "" && targetBranch != branch {
 			params.Set("merge_request[target_branch]", targetBranch)
 		}
-		
+
 		return fmt.Sprintf("%s?%s", baseURL, params.Encode())
 
 	default:

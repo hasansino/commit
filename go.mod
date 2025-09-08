@@ -1,6 +1,6 @@
 module github.com/hasansino/commit
 
-go 1.25.0
+go 1.25.1
 
 require (
 	github.com/ProtonMail/go-crypto v1.3.0

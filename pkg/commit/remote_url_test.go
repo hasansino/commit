@@ -6,10 +6,10 @@ import (
 
 func TestParseRemoteURL(t *testing.T) {
 	tests := []struct {
-		name        string
-		remoteURL   string
-		wantInfo    *RemoteInfo
-		wantErr     bool
+		name      string
+		remoteURL string
+		wantInfo  *RemoteInfo
+		wantErr   bool
 	}{
 		{
 			name:      "GitHub HTTPS URL",
