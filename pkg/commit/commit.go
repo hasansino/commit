@@ -48,7 +48,7 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 
 	for _, name := range settings.Modules {
 		switch name {
-		case "jiraPrefixDetector":
+		case "jira":
 			svc.modules = append(svc.modules, modules.NewJIRAPrefixDetector())
 		}
 	}

@@ -68,7 +68,7 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	flags.StringSliceVar(
 		&settings.IncludePatterns, "include-only", nil, "Only include specific patterns")
 	flags.StringSliceVar(
-		&settings.Modules, "modules", nil, "Modules to enable")
+		&settings.Modules, "modules", []string{"jira"}, "Modules to enable")
 	flags.BoolVar(
 		&settings.MultiLine, "multi-line", false, "Use multi-line commit messages")
 	flags.BoolVar(
