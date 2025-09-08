@@ -714,14 +714,6 @@ func (g *gitOperations) GetDefaultBranch() string {
 			return strings.TrimPrefix(branch, "refs/remotes/origin/")
 		}
 	}
-
-	// Check if main branch exists
-	cmd = exec.Command("git", "rev-parse", "--verify", "origin/main")
-	if err := cmd.Run(); err == nil {
-		return "main"
-	}
-
-	// Fall back to master
 	return "master"
 }
 
@@ -756,7 +748,8 @@ func (g *gitOperations) Push() (string, error) {
 	targetBranch := g.GetDefaultBranch()
 
 	var mrURL string
-	if branch == "master" && targetBranch == "master" {
+	if strings.Contains(branch, "master") &&
+		strings.Contains(targetBranch, "master") {
 		mrURL = generateMergeRequestURL(remoteInfo, branch, targetBranch)
 	}
 

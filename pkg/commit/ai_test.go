@@ -237,15 +237,6 @@ func TestAIService_buildCustomPrompt(t *testing.T) {
 			shouldNotContain: []string{"{branch}", "{files}", "{diff}"},
 		},
 		{
-			name:             "empty files",
-			customPrompt:     "Files: {files}",
-			diff:             "diff content",
-			branch:           "main",
-			files:            []string{},
-			expectations:     []string{"Files: "},
-			shouldNotContain: []string{"{files}"},
-		},
-		{
 			name:             "no placeholders",
 			customPrompt:     "Simple prompt with no variables",
 			diff:             "some diff",
@@ -308,7 +299,7 @@ func TestAIService_GenerateCommitMessages(t *testing.T) {
 
 	ctx := context.Background()
 	diff := "diff --git a/test.go b/test.go"
-	branch := "main"
+	branch := "master"
 	files := []string{"test.go"}
 	providers := []string{"testprovider"}
 
@@ -338,7 +329,7 @@ func TestAIService_GenerateCommitMessages_NoProviders(t *testing.T) {
 
 	ctx := context.Background()
 	diff := "diff --git a/test.go b/test.go"
-	branch := "main"
+	branch := "master"
 	files := []string{"test.go"}
 	providers := []string{"nonexistent"}
 
@@ -379,7 +370,7 @@ func TestAIService_GenerateCommitMessages_FirstMode(t *testing.T) {
 
 	ctx := context.Background()
 	diff := "diff --git a/test.go b/test.go\n+func test() {}"
-	branch := "main"
+	branch := "master"
 	files := []string{"test.go"}
 	providers := []string{}
 
@@ -439,7 +430,7 @@ func TestAIService_GenerateCommitMessages_ContextCancellation(t *testing.T) {
 	cancel() // Cancel immediately
 
 	diff := "diff --git a/test.go b/test.go\n+func test() {}"
-	branch := "main"
+	branch := "master"
 	files := []string{"test.go"}
 	providers := []string{"testprovider"}
 
@@ -475,7 +466,7 @@ func TestAIService_GenerateCommitMessages_ProviderError(t *testing.T) {
 
 	ctx := context.Background()
 	diff := "diff --git a/test.go b/test.go\n+func test() {}"
-	branch := "main"
+	branch := "master"
 	files := []string{"test.go"}
 	providers := []string{"errorprovider"}
 

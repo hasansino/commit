@@ -70,7 +70,7 @@ func TestNewCommitService(t *testing.T) {
 			name: "valid settings with modules",
 			settings: &Settings{
 				Timeout: 30 * time.Second,
-				Modules: []string{"jiraPrefixDetector"},
+				Modules: []string{"jira"},
 			},
 			opts:      []Option{},
 			expectErr: false,

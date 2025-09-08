@@ -41,11 +41,6 @@ func TestDetectJIRAPrefix(t *testing.T) {
 			expected:   "JKL-999: ",
 		},
 		{
-			name:       "main branch",
-			branchName: "main",
-			expected:   "",
-		},
-		{
 			name:       "master branch",
 			branchName: "master",
 			expected:   "",

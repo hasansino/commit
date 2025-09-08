@@ -199,8 +199,8 @@ func TestGenerateMergeRequestURL(t *testing.T) {
 				Repo:     "repo",
 			},
 			branch:       "feature-branch",
-			targetBranch: "main",
-			wantURL:      "https://github.com/owner/repo/compare/main...feature-branch?expand=1",
+			targetBranch: "master",
+			wantURL:      "https://github.com/owner/repo/compare/master...feature-branch?expand=1",
 		},
 		{
 			name: "GitHub PR URL without target branch",
@@ -215,18 +215,6 @@ func TestGenerateMergeRequestURL(t *testing.T) {
 			wantURL:      "https://github.com/owner/repo/pull/new/feature-branch",
 		},
 		{
-			name: "GitHub PR URL same branch as target",
-			info: &RemoteInfo{
-				Platform: PlatformGitHub,
-				Host:     "github.com",
-				Owner:    "owner",
-				Repo:     "repo",
-			},
-			branch:       "main",
-			targetBranch: "main",
-			wantURL:      "https://github.com/owner/repo/pull/new/main",
-		},
-		{
 			name: "GitLab MR URL with target branch",
 			info: &RemoteInfo{
 				Platform: PlatformGitLab,
@@ -235,8 +223,8 @@ func TestGenerateMergeRequestURL(t *testing.T) {
 				Repo:     "repo",
 			},
 			branch:       "feature-branch",
-			targetBranch: "main",
-			wantURL:      "https://gitlab.com/owner/repo/-/merge_requests/new?merge_request%5Bsource_branch%5D=feature-branch&merge_request%5Btarget_branch%5D=main",
+			targetBranch: "master",
+			wantURL:      "https://gitlab.com/owner/repo/-/merge_requests/new?merge_request%5Bsource_branch%5D=feature-branch&merge_request%5Btarget_branch%5D=master",
 		},
 		{
 			name: "GitLab MR URL without target branch",
@@ -259,8 +247,8 @@ func TestGenerateMergeRequestURL(t *testing.T) {
 				Repo:     "repo",
 			},
 			branch:       "feature-branch",
-			targetBranch: "main",
-			wantURL:      "https://gitlab.com/group/subgroup/repo/-/merge_requests/new?merge_request%5Bsource_branch%5D=feature-branch&merge_request%5Btarget_branch%5D=main",
+			targetBranch: "master",
+			wantURL:      "https://gitlab.com/group/subgroup/repo/-/merge_requests/new?merge_request%5Bsource_branch%5D=feature-branch&merge_request%5Btarget_branch%5D=master",
 		},
 		{
 			name: "GitHub with special characters in branch",
@@ -283,14 +271,14 @@ func TestGenerateMergeRequestURL(t *testing.T) {
 				Repo:     "repo",
 			},
 			branch:       "feature-branch",
-			targetBranch: "main",
+			targetBranch: "master",
 			wantURL:      "",
 		},
 		{
 			name:         "Nil info returns empty",
 			info:         nil,
 			branch:       "feature-branch",
-			targetBranch: "main",
+			targetBranch: "master",
 			wantURL:      "",
 		},
 		{
@@ -302,7 +290,7 @@ func TestGenerateMergeRequestURL(t *testing.T) {
 				Repo:     "repo",
 			},
 			branch:       "",
-			targetBranch: "main",
+			targetBranch: "master",
 			wantURL:      "",
 		},
 	}

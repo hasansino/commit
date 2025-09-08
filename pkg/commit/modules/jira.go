@@ -38,7 +38,7 @@ func (j *JIRAPrefixDetector) TransformCommitMessage(ctx context.Context, message
 }
 
 func (j *JIRAPrefixDetector) detectJIRAPrefix(branchName string) string {
-	if branchName == "" || branchName == "main" || branchName == "master" || branchName == "develop" {
+	if branchName == "" || branchName == "master" || branchName == "develop" {
 		return ""
 	}
 	for _, pattern := range jiraPatterns {

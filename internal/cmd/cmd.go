@@ -70,7 +70,7 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	flags.StringSliceVar(
 		&settings.Modules, "modules", []string{"jira"}, "Modules to enable")
 	flags.BoolVar(
-		&settings.MultiLine, "multi-line", false, "Use multi-line commit messages")
+		&settings.MultiLine, "multi-line", true, "Use multi-line commit messages")
 	flags.BoolVar(
 		&settings.Push, "push", false, "Push after committing")
 	flags.StringVar(
