@@ -755,8 +755,10 @@ func (g *gitOperations) Push() (string, error) {
 	// Get the default/target branch for MR/PR
 	targetBranch := g.GetDefaultBranch()
 
-	// Generate the MR/PR URL
-	mrURL := generateMergeRequestURL(remoteInfo, branch, targetBranch)
+	var mrURL string
+	if branch == "master" && targetBranch == "master" {
+		mrURL = generateMergeRequestURL(remoteInfo, branch, targetBranch)
+	}
 
 	return mrURL, nil
 }
