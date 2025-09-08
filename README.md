@@ -49,8 +49,8 @@ Flags:
   -h, --help                   help for commit
       --include-only strings   Only include specific patterns
       --log-level string       Logging level (debug, info, warn, error) (default "info")
-      --modules strings        Modules to enable
-      --multi-line             Use multi-line commit messages
+      --modules strings        Modules to enable (default 'jira')
+      --multi-line             Use multi-line commit messages (default true)
       --prompt string          Custom prompt template
       --providers strings      Providers to use, leave empty to for all (claude|openai|gemini)
       --push                   Push after committing
