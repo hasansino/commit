@@ -687,21 +687,78 @@ func shouldExcludeFile(file string, excludePatterns []string, globalPatterns []s
 	return false
 }
 
-func (g *gitOperations) Push() error {
+func (g *gitOperations) GetRemoteURL(remoteName string) (string, error) {
+	remote, err := g.repo.Remote(remoteName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get remote '%s': %w", remoteName, err)
+	}
+
+	config := remote.Config()
+	if len(config.URLs) == 0 {
+		return "", fmt.Errorf("remote '%s' has no URLs", remoteName)
+	}
+
+	// Return the first URL (usually there's only one)
+	return config.URLs[0], nil
+}
+
+func (g *gitOperations) GetDefaultBranch() string {
+	// Try to get the default branch from the remote HEAD
+	// If that fails, fall back to common defaults
+	cmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
+	output, err := cmd.Output()
+	if err == nil {
+		// Extract branch name from refs/remotes/origin/main or refs/remotes/origin/master
+		branch := strings.TrimSpace(string(output))
+		if strings.HasPrefix(branch, "refs/remotes/origin/") {
+			return strings.TrimPrefix(branch, "refs/remotes/origin/")
+		}
+	}
+
+	// Check if main branch exists
+	cmd = exec.Command("git", "rev-parse", "--verify", "origin/main")
+	if err := cmd.Run(); err == nil {
+		return "main"
+	}
+
+	// Fall back to master
+	return "master"
+}
+
+func (g *gitOperations) Push() (string, error) {
 	// Get the current branch name
 	branch, err := g.GetCurrentBranch()
 	if err != nil {
-		return fmt.Errorf("failed to get current branch: %w", err)
+		return "", fmt.Errorf("failed to get current branch: %w", err)
 	}
 
 	// Push to the matching branch on the remote
 	cmd := exec.Command("git", "push", "origin", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to push to origin/%s: %w\nOutput: %s", branch, err, string(output))
+		return "", fmt.Errorf("failed to push to origin/%s: %w\nOutput: %s", branch, err, string(output))
 	}
 
-	return nil
+	// Generate MR/PR URL if possible
+	remoteURL, err := g.GetRemoteURL("origin")
+	if err != nil {
+		// Don't fail the push, just log that we couldn't get the URL
+		return "", nil
+	}
+
+	remoteInfo, err := parseRemoteURL(remoteURL)
+	if err != nil {
+		// Don't fail the push, just return empty URL
+		return "", nil
+	}
+
+	// Get the default/target branch for MR/PR
+	targetBranch := g.GetDefaultBranch()
+
+	// Generate the MR/PR URL
+	mrURL := generateMergeRequestURL(remoteInfo, branch, targetBranch)
+
+	return mrURL, nil
 }
 
 // GetLatestTag retrieves the latest semver tag from the repository

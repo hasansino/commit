@@ -212,11 +212,16 @@ func (s *Service) Execute(ctx context.Context) error {
 		)
 
 		if s.settings.Push {
-			if err := s.gitOps.Push(); err != nil {
+			mrURL, err := s.gitOps.Push()
+			if err != nil {
 				s.logger.ErrorContext(ctx, "Failed to push to remote", "error", err)
 				return fmt.Errorf("failed to push: %w", err)
 			}
 			s.logger.InfoContext(ctx, "Successfully pushed to remote")
+
+			if mrURL != "" {
+				s.logger.InfoContext(ctx, "Create merge/pull request", "url", mrURL)
+			}
 		}
 
 		if s.settings.Tag != "" {
