@@ -21,8 +21,8 @@ go install github.com/hasansino/commit@latest
 - Supports semantic versioning tag (major, minor, patch) incrementation
 - Option to push changes after committing to relevant remote branch
 - Dry-run mode
-- GPG signing according to user git configuration
-- Modules
+- GPG signing according to user git configuration, supporting password input
+- Modules to extend functionality (e.g., JIRA prefixes)
 
 ## Demo
 

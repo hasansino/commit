@@ -703,12 +703,9 @@ func (g *gitOperations) GetRemoteURL(remoteName string) (string, error) {
 }
 
 func (g *gitOperations) GetDefaultBranch() string {
-	// Try to get the default branch from the remote HEAD
-	// If that fails, fall back to common defaults
 	cmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
 	output, err := cmd.Output()
 	if err == nil {
-		// Extract branch name from refs/remotes/origin/main or refs/remotes/origin/master
 		branch := strings.TrimSpace(string(output))
 		if strings.HasPrefix(branch, "refs/remotes/origin/") {
 			return strings.TrimPrefix(branch, "refs/remotes/origin/")
@@ -747,13 +744,11 @@ func (g *gitOperations) Push() (string, error) {
 	// Get the default/target branch for MR/PR
 	targetBranch := g.GetDefaultBranch()
 
-	var mrURL string
-	if strings.Contains(branch, "master") &&
-		strings.Contains(targetBranch, "master") {
-		mrURL = generateMergeRequestURL(remoteInfo, branch, targetBranch)
+	if branch != targetBranch {
+		return generateMergeRequestURL(remoteInfo, branch, targetBranch), nil
 	}
 
-	return mrURL, nil
+	return "", nil
 }
 
 // GetLatestTag retrieves the latest semver tag from the repository

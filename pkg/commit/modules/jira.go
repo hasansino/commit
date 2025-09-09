@@ -22,13 +22,13 @@ func NewJIRAPrefixDetector() *JIRAPrefixDetector {
 }
 
 func (j *JIRAPrefixDetector) Name() string {
-	return "jiraPrefixDetector"
+	return "jira"
 }
 
 func (j *JIRAPrefixDetector) TransformPrompt(_ context.Context, prompt string) (string, bool, error) {
 	return prompt, false, nil
 }
-func (j *JIRAPrefixDetector) TransformCommitMessage(ctx context.Context, message string) (string, bool, error) {
+func (j *JIRAPrefixDetector) TransformCommitMessage(_ context.Context, message string) (string, bool, error) {
 	jiraPrefix := j.detectJIRAPrefix(message)
 	if jiraPrefix == "" {
 		return message, false, nil
@@ -38,9 +38,6 @@ func (j *JIRAPrefixDetector) TransformCommitMessage(ctx context.Context, message
 }
 
 func (j *JIRAPrefixDetector) detectJIRAPrefix(branchName string) string {
-	if branchName == "" || branchName == "master" || branchName == "develop" {
-		return ""
-	}
 	for _, pattern := range jiraPatterns {
 		matches := pattern.FindStringSubmatch(branchName)
 		if len(matches) > 1 && matches[1] != "" {
