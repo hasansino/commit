@@ -15,8 +15,8 @@ const defaultRepoPath = "."
 type Service struct {
 	logger    *slog.Logger
 	settings  *Settings
-	gitOps    *gitOperations
-	aiService *aiService
+	gitOps    gitOperationsAccessor
+	aiService aiServiceAccessor
 	modules   []moduleAccessor
 }
 

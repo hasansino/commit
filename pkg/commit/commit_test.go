@@ -3,6 +3,7 @@ package commit
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -362,6 +363,94 @@ func TestService_Execute_ValidationFlow(t *testing.T) {
 	}
 }
 
+// Adapter to bridge the mock interface for git operations
+type testGitOperationsAdapter struct {
+	gitOps *mocks.MockgitOperationsAccessor
+}
+
+func (a *testGitOperationsAdapter) IsGitRepository() bool {
+	return a.gitOps.IsGitRepository()
+}
+
+func (a *testGitOperationsAdapter) UnstageAll() error {
+	return a.gitOps.UnstageAll()
+}
+
+func (a *testGitOperationsAdapter) StageFiles(excludePatterns, includePatterns []string, useGlobalGitignore bool) ([]string, error) {
+	return a.gitOps.StageFiles(excludePatterns, includePatterns, useGlobalGitignore)
+}
+
+func (a *testGitOperationsAdapter) GetStagedDiff() (string, error) {
+	return a.gitOps.GetStagedDiff()
+}
+
+func (a *testGitOperationsAdapter) GetCurrentBranch() (string, error) {
+	return a.gitOps.GetCurrentBranch()
+}
+
+func (a *testGitOperationsAdapter) CreateCommit(message string) error {
+	return a.gitOps.CreateCommit(message)
+}
+
+func (a *testGitOperationsAdapter) Push() (string, error) {
+	return a.gitOps.Push()
+}
+
+func (a *testGitOperationsAdapter) GetLatestTag() (string, error) {
+	return a.gitOps.GetLatestTag()
+}
+
+func (a *testGitOperationsAdapter) IncrementVersion(currentTag, incrementType string) (string, error) {
+	return a.gitOps.IncrementVersion(currentTag, incrementType)
+}
+
+func (a *testGitOperationsAdapter) CreateTag(tag, message string) error {
+	return a.gitOps.CreateTag(tag, message)
+}
+
+func (a *testGitOperationsAdapter) PushTag(tag string) error {
+	return a.gitOps.PushTag(tag)
+}
+
+// Simplified adapter for testing AI service
+type simpleTestAdapter struct {
+	hasProviders bool
+	commitMsg    string
+	genErr       error
+}
+
+func (s *simpleTestAdapter) GetProviders() map[string]providerAccessor {
+	if s.hasProviders {
+		return map[string]providerAccessor{
+			"test": &mockProviderForTest{},
+		}
+	}
+	return map[string]providerAccessor{}
+}
+
+func (s *simpleTestAdapter) GenerateCommitMessages(
+	ctx context.Context,
+	diff, branch string, files []string,
+	providers []string, customPrompt string,
+	first bool, multiLine bool,
+) (map[string]string, error) {
+	if s.genErr != nil {
+		return nil, s.genErr
+	}
+	if s.commitMsg != "" {
+		return map[string]string{"test": s.commitMsg}, nil
+	}
+	return map[string]string{}, nil
+}
+
+type mockProviderForTest struct{}
+
+func (m *mockProviderForTest) Name() string { return "test" }
+func (m *mockProviderForTest) IsAvailable() bool { return true }
+func (m *mockProviderForTest) Ask(ctx context.Context, prompt string) ([]string, error) {
+	return []string{"test message"}, nil
+}
+
 // Integration test helpers for testing with actual modules
 func TestService_ModuleIntegration(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -406,7 +495,7 @@ func TestService_ModuleIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockModule.EXPECT().TransformCommitMessage(gomock.Any(), tt.inputMessage).
+			mockModule.EXPECT().TransformCommitMessage(gomock.Any(), gomock.Any(), tt.inputMessage).
 				Return(tt.moduleResponse, tt.workDone, tt.moduleError)
 
 			service := &Service{
@@ -420,7 +509,7 @@ func TestService_ModuleIntegration(t *testing.T) {
 
 			for _, module := range service.modules {
 				service.logger.DebugContext(ctx, "Running module", "name", module.Name())
-				transformedMessage, workDone, err := module.TransformCommitMessage(ctx, message)
+				transformedMessage, workDone, err := module.TransformCommitMessage(ctx, "main", message)
 				if !workDone {
 					service.logger.DebugContext(
 						ctx, "Module did not transform commit message",
@@ -441,6 +530,306 @@ func TestService_ModuleIntegration(t *testing.T) {
 
 			if message != tt.expected {
 				t.Errorf("Module transformation result = %q, want %q", message, tt.expected)
+			}
+		})
+	}
+}
+
+func TestService_Execute(t *testing.T) {
+	tests := []struct {
+		name        string
+		settings    *Settings
+		setupMocks  func(*mocks.MockgitOperationsAccessor) 
+		aiAdapter   *simpleTestAdapter
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "no providers configured",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: false},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {},
+			wantErr:     true,
+			errContains: "no api keys found in environment",
+		},
+		{
+			name: "not a git repository",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(false)
+			},
+			wantErr:     true,
+			errContains: "not a git repository",
+		},
+		{
+			name: "unstage files error",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(errors.New("unstage error"))
+			},
+			wantErr:     true,
+			errContains: "failed to unstage files",
+		},
+		{
+			name: "no files to commit",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{}, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty diff",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("  ", nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "get current branch error",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch().Return("", errors.New("branch error"))
+			},
+			wantErr:     true,
+			errContains: "failed to get current branch",
+		},
+		{
+			name: "generate commit messages error",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, genErr: errors.New("ai error")},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch().Return("main", nil)
+			},
+			wantErr:     true,
+			errContains: "failed to generate suggestions",
+		},
+		{
+			name: "auto mode with no messages",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: ""},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch().Return("main", nil)
+			},
+			wantErr:     true,
+			errContains: "no valid suggestions available for auto-commit",
+		},
+		{
+			name: "auto mode success with dry run",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+				DryRun:  true,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+			},
+			wantErr: false,
+		},
+		{
+			name: "create commit error",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+				DryRun:  false,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().CreateCommit("test commit").Return(errors.New("commit error"))
+			},
+			wantErr:     true,
+			errContains: "failed to create commit",
+		},
+		{
+			name: "successful commit",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+				DryRun:  false,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().CreateCommit("test commit").Return(nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "successful commit and push",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+				DryRun:  false,
+				Push:    true,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().CreateCommit("test commit").Return(nil)
+				git.EXPECT().Push().Return("https://github.com/user/repo/pull/new", nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "push error",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+				DryRun:  false,
+				Push:    true,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().CreateCommit("test commit").Return(nil)
+				git.EXPECT().Push().Return("", errors.New("push error"))
+			},
+			wantErr:     true,
+			errContains: "failed to push",
+		},
+		{
+			name: "tag creation success",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+				DryRun:  false,
+				Tag:     "patch",
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().CreateCommit("test commit").Return(nil)
+				git.EXPECT().GetLatestTag().Return("v1.0.0", nil)
+				git.EXPECT().IncrementVersion("v1.0.0", "patch").Return("v1.0.1", nil)
+				git.EXPECT().CreateTag("v1.0.1", "test commit").Return(nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "tag creation and push",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+				DryRun:  false,
+				Tag:     "minor",
+				Push:    true,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().UnstageAll().Return(nil)
+				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
+				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().CreateCommit("test commit").Return(nil)
+				git.EXPECT().Push().Return("", nil)
+				git.EXPECT().GetLatestTag().Return("v1.0.0", nil)
+				git.EXPECT().IncrementVersion("v1.0.0", "minor").Return("v1.1.0", nil)
+				git.EXPECT().CreateTag("v1.1.0", "test commit").Return(nil)
+				git.EXPECT().PushTag("v1.1.0").Return(nil)
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockGit := mocks.NewMockgitOperationsAccessor(ctrl)
+			
+			service := &Service{
+				logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+				settings: tt.settings,
+				gitOps:   &testGitOperationsAdapter{gitOps: mockGit},
+				aiService: tt.aiAdapter,
+			}
+
+			tt.setupMocks(mockGit)
+
+			ctx := context.Background()
+			err := service.Execute(ctx)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Execute() expected error but got none")
+					return
+				}
+				if tt.errContains != "" && !containsString(err.Error(), tt.errContains) {
+					t.Errorf("Execute() error = %q, want to contain %q", err.Error(), tt.errContains)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Execute() unexpected error = %v", err)
+				}
 			}
 		})
 	}

@@ -16,6 +16,9 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
+// Type alias to resolve the unexported interface issue
+type providerAccessor = MockproviderAccessor
+
 // MockproviderAccessor is a mock of providerAccessor interface.
 type MockproviderAccessor struct {
 	ctrl     *gomock.Controller
@@ -151,4 +154,241 @@ func (m *MockmoduleAccessor) TransformPrompt(ctx context.Context, prompt string)
 func (mr *MockmoduleAccessorMockRecorder) TransformPrompt(ctx, prompt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TransformPrompt", reflect.TypeOf((*MockmoduleAccessor)(nil).TransformPrompt), ctx, prompt)
+}
+
+// MockgitOperationsAccessor is a mock of gitOperationsAccessor interface.
+type MockgitOperationsAccessor struct {
+	ctrl     *gomock.Controller
+	recorder *MockgitOperationsAccessorMockRecorder
+	isgomock struct{}
+}
+
+// MockgitOperationsAccessorMockRecorder is the mock recorder for MockgitOperationsAccessor.
+type MockgitOperationsAccessorMockRecorder struct {
+	mock *MockgitOperationsAccessor
+}
+
+// NewMockgitOperationsAccessor creates a new mock instance.
+func NewMockgitOperationsAccessor(ctrl *gomock.Controller) *MockgitOperationsAccessor {
+	mock := &MockgitOperationsAccessor{ctrl: ctrl}
+	mock.recorder = &MockgitOperationsAccessorMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockgitOperationsAccessor) EXPECT() *MockgitOperationsAccessorMockRecorder {
+	return m.recorder
+}
+
+// CreateCommit mocks base method.
+func (m *MockgitOperationsAccessor) CreateCommit(message string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateCommit", message)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateCommit indicates an expected call of CreateCommit.
+func (mr *MockgitOperationsAccessorMockRecorder) CreateCommit(message any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateCommit", reflect.TypeOf((*MockgitOperationsAccessor)(nil).CreateCommit), message)
+}
+
+// CreateTag mocks base method.
+func (m *MockgitOperationsAccessor) CreateTag(tag, message string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateTag", tag, message)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateTag indicates an expected call of CreateTag.
+func (mr *MockgitOperationsAccessorMockRecorder) CreateTag(tag, message any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTag", reflect.TypeOf((*MockgitOperationsAccessor)(nil).CreateTag), tag, message)
+}
+
+// GetCurrentBranch mocks base method.
+func (m *MockgitOperationsAccessor) GetCurrentBranch() (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCurrentBranch")
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCurrentBranch indicates an expected call of GetCurrentBranch.
+func (mr *MockgitOperationsAccessorMockRecorder) GetCurrentBranch() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCurrentBranch", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetCurrentBranch))
+}
+
+// GetLatestTag mocks base method.
+func (m *MockgitOperationsAccessor) GetLatestTag() (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLatestTag")
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLatestTag indicates an expected call of GetLatestTag.
+func (mr *MockgitOperationsAccessorMockRecorder) GetLatestTag() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestTag", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetLatestTag))
+}
+
+// GetStagedDiff mocks base method.
+func (m *MockgitOperationsAccessor) GetStagedDiff() (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetStagedDiff")
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetStagedDiff indicates an expected call of GetStagedDiff.
+func (mr *MockgitOperationsAccessorMockRecorder) GetStagedDiff() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStagedDiff", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetStagedDiff))
+}
+
+// IncrementVersion mocks base method.
+func (m *MockgitOperationsAccessor) IncrementVersion(currentTag, incrementType string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IncrementVersion", currentTag, incrementType)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IncrementVersion indicates an expected call of IncrementVersion.
+func (mr *MockgitOperationsAccessorMockRecorder) IncrementVersion(currentTag, incrementType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementVersion", reflect.TypeOf((*MockgitOperationsAccessor)(nil).IncrementVersion), currentTag, incrementType)
+}
+
+// IsGitRepository mocks base method.
+func (m *MockgitOperationsAccessor) IsGitRepository() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsGitRepository")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsGitRepository indicates an expected call of IsGitRepository.
+func (mr *MockgitOperationsAccessorMockRecorder) IsGitRepository() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsGitRepository", reflect.TypeOf((*MockgitOperationsAccessor)(nil).IsGitRepository))
+}
+
+// Push mocks base method.
+func (m *MockgitOperationsAccessor) Push() (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Push")
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Push indicates an expected call of Push.
+func (mr *MockgitOperationsAccessorMockRecorder) Push() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Push", reflect.TypeOf((*MockgitOperationsAccessor)(nil).Push))
+}
+
+// PushTag mocks base method.
+func (m *MockgitOperationsAccessor) PushTag(tag string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PushTag", tag)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PushTag indicates an expected call of PushTag.
+func (mr *MockgitOperationsAccessorMockRecorder) PushTag(tag any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushTag", reflect.TypeOf((*MockgitOperationsAccessor)(nil).PushTag), tag)
+}
+
+// StageFiles mocks base method.
+func (m *MockgitOperationsAccessor) StageFiles(excludePatterns, includePatterns []string, useGlobalGitignore bool) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StageFiles", excludePatterns, includePatterns, useGlobalGitignore)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StageFiles indicates an expected call of StageFiles.
+func (mr *MockgitOperationsAccessorMockRecorder) StageFiles(excludePatterns, includePatterns, useGlobalGitignore any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StageFiles", reflect.TypeOf((*MockgitOperationsAccessor)(nil).StageFiles), excludePatterns, includePatterns, useGlobalGitignore)
+}
+
+// UnstageAll mocks base method.
+func (m *MockgitOperationsAccessor) UnstageAll() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UnstageAll")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UnstageAll indicates an expected call of UnstageAll.
+func (mr *MockgitOperationsAccessorMockRecorder) UnstageAll() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnstageAll", reflect.TypeOf((*MockgitOperationsAccessor)(nil).UnstageAll))
+}
+
+// MockaiServiceAccessor is a mock of aiServiceAccessor interface.
+type MockaiServiceAccessor struct {
+	ctrl     *gomock.Controller
+	recorder *MockaiServiceAccessorMockRecorder
+	isgomock struct{}
+}
+
+// MockaiServiceAccessorMockRecorder is the mock recorder for MockaiServiceAccessor.
+type MockaiServiceAccessorMockRecorder struct {
+	mock *MockaiServiceAccessor
+}
+
+// NewMockaiServiceAccessor creates a new mock instance.
+func NewMockaiServiceAccessor(ctrl *gomock.Controller) *MockaiServiceAccessor {
+	mock := &MockaiServiceAccessor{ctrl: ctrl}
+	mock.recorder = &MockaiServiceAccessorMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockaiServiceAccessor) EXPECT() *MockaiServiceAccessorMockRecorder {
+	return m.recorder
+}
+
+// GenerateCommitMessages mocks base method.
+func (m *MockaiServiceAccessor) GenerateCommitMessages(ctx context.Context, diff, branch string, files, providers []string, customPrompt string, first, multiLine bool) (map[string]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GenerateCommitMessages", ctx, diff, branch, files, providers, customPrompt, first, multiLine)
+	ret0, _ := ret[0].(map[string]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GenerateCommitMessages indicates an expected call of GenerateCommitMessages.
+func (mr *MockaiServiceAccessorMockRecorder) GenerateCommitMessages(ctx, diff, branch, files, providers, customPrompt, first, multiLine any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateCommitMessages", reflect.TypeOf((*MockaiServiceAccessor)(nil).GenerateCommitMessages), ctx, diff, branch, files, providers, customPrompt, first, multiLine)
+}
+
+// GetProviders mocks base method.
+func (m *MockaiServiceAccessor) GetProviders() map[string]providerAccessor {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProviders")
+	ret0, _ := ret[0].(map[string]providerAccessor)
+	return ret0
+}
+
+// GetProviders indicates an expected call of GetProviders.
+func (mr *MockaiServiceAccessorMockRecorder) GetProviders() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProviders", reflect.TypeOf((*MockaiServiceAccessor)(nil).GetProviders))
 }

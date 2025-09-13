@@ -29,30 +29,38 @@ func (j *JIRAPrefixDetector) TransformPrompt(_ context.Context, prompt string) (
 	return prompt, false, nil
 }
 func (j *JIRAPrefixDetector) TransformCommitMessage(_ context.Context, branch, message string) (string, bool, error) {
-	jiraPrefix := j.detectJIRAPrefix(branch)
+	jiraPrefix := j.detectJiraID(branch)
 	if jiraPrefix == "" {
 		return message, false, nil
 	}
-	commitMessage := j.applyJIRAPrefix(message, jiraPrefix)
+	commitMessage := j.addJiraID(message, jiraPrefix)
 	return commitMessage, true, nil
 }
 
-func (j *JIRAPrefixDetector) detectJIRAPrefix(branchName string) string {
+func (j *JIRAPrefixDetector) detectJiraID(branchName string) string {
 	for _, pattern := range jiraPatterns {
 		matches := pattern.FindStringSubmatch(branchName)
 		if len(matches) > 1 && matches[1] != "" {
-			return matches[1] + ": "
+			return matches[1]
 		}
 	}
 	return ""
 }
 
-func (j *JIRAPrefixDetector) applyJIRAPrefix(commitMessage, jiraPrefix string) string {
-	if jiraPrefix == "" {
+func (j *JIRAPrefixDetector) addJiraID(commitMessage, jiraID string) string {
+	if jiraID == "" {
 		return commitMessage
 	}
-	if strings.HasPrefix(commitMessage, jiraPrefix) {
+
+	if strings.Contains(commitMessage, "("+jiraID+")") {
 		return commitMessage
 	}
-	return jiraPrefix + commitMessage
+
+	lines := strings.SplitN(commitMessage, "\n", 2)
+	if len(lines) == 1 {
+		return commitMessage + " (" + jiraID + ")"
+	}
+
+	lines[0] = lines[0] + " (" + jiraID + ")"
+	return strings.Join(lines, "\n")
 }
