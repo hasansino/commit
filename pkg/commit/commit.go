@@ -173,9 +173,15 @@ func (s *Service) Execute(ctx context.Context) error {
 		return fmt.Errorf("no commit message provided")
 	}
 
+	branch, err = s.gitOps.GetCurrentBranch()
+	if err != nil {
+		s.logger.ErrorContext(ctx, "Failed to get current branch", "error", err)
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+
 	for _, module := range s.modules {
 		s.logger.DebugContext(ctx, "Running module", "name", module.Name())
-		commitMessage, workDone, err := module.TransformCommitMessage(ctx, commitMessage)
+		commitMessage, workDone, err := module.TransformCommitMessage(ctx, branch, commitMessage)
 		if !workDone {
 			s.logger.DebugContext(
 				ctx, "Module did not transform commit message",

@@ -122,9 +122,9 @@ func (mr *MockmoduleAccessorMockRecorder) Name() *gomock.Call {
 }
 
 // TransformCommitMessage mocks base method.
-func (m *MockmoduleAccessor) TransformCommitMessage(ctx context.Context, message string) (string, bool, error) {
+func (m *MockmoduleAccessor) TransformCommitMessage(ctx context.Context, branch, message string) (string, bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "TransformCommitMessage", ctx, message)
+	ret := m.ctrl.Call(m, "TransformCommitMessage", ctx, branch, message)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(bool)
 	ret2, _ := ret[2].(error)
@@ -132,9 +132,9 @@ func (m *MockmoduleAccessor) TransformCommitMessage(ctx context.Context, message
 }
 
 // TransformCommitMessage indicates an expected call of TransformCommitMessage.
-func (mr *MockmoduleAccessorMockRecorder) TransformCommitMessage(ctx, message any) *gomock.Call {
+func (mr *MockmoduleAccessorMockRecorder) TransformCommitMessage(ctx, branch, message any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TransformCommitMessage", reflect.TypeOf((*MockmoduleAccessor)(nil).TransformCommitMessage), ctx, message)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TransformCommitMessage", reflect.TypeOf((*MockmoduleAccessor)(nil).TransformCommitMessage), ctx, branch, message)
 }
 
 // TransformPrompt mocks base method.

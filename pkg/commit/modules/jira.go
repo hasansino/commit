@@ -28,8 +28,8 @@ func (j *JIRAPrefixDetector) Name() string {
 func (j *JIRAPrefixDetector) TransformPrompt(_ context.Context, prompt string) (string, bool, error) {
 	return prompt, false, nil
 }
-func (j *JIRAPrefixDetector) TransformCommitMessage(_ context.Context, message string) (string, bool, error) {
-	jiraPrefix := j.detectJIRAPrefix(message)
+func (j *JIRAPrefixDetector) TransformCommitMessage(_ context.Context, branch, message string) (string, bool, error) {
+	jiraPrefix := j.detectJIRAPrefix(branch)
 	if jiraPrefix == "" {
 		return message, false, nil
 	}

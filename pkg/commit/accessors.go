@@ -13,5 +13,5 @@ type providerAccessor interface {
 type moduleAccessor interface {
 	Name() string
 	TransformPrompt(ctx context.Context, prompt string) (string, bool, error)
-	TransformCommitMessage(ctx context.Context, message string) (string, bool, error)
+	TransformCommitMessage(ctx context.Context, branch, message string) (string, bool, error)
 }
