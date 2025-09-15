@@ -4,7 +4,7 @@ go 1.25.1
 
 require (
 	github.com/ProtonMail/go-crypto v1.3.0
-	github.com/anthropics/anthropic-sdk-go v1.11.0
+	github.com/anthropics/anthropic-sdk-go v1.12.0
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.7
 	github.com/charmbracelet/lipgloss v1.1.0
