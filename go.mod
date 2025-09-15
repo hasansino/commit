@@ -10,7 +10,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/go-git/go-git/v5 v5.16.2
 	github.com/lmittmann/tint v1.1.2
-	github.com/openai/openai-go/v2 v2.4.0
+	github.com/openai/openai-go/v2 v2.4.2
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.10
 	go.uber.org/mock v0.6.0
