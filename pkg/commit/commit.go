@@ -92,11 +92,13 @@ func (s *Service) Execute(ctx context.Context) error {
 
 	s.logger.DebugContext(ctx, "Getting staged diff...")
 
-	diff, err := s.gitOps.GetStagedDiff()
+	diff, err := s.gitOps.GetStagedDiff(s.settings.MaxDiffSizeBytes)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to get staged diff", "error", err)
 		return fmt.Errorf("failed to get diff: %w", err)
 	}
+
+	fmt.Println(diff)
 
 	if strings.TrimSpace(diff) == "" {
 		s.logger.WarnContext(ctx, "No changes staged for commit")

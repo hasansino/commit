@@ -77,6 +77,9 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 		&settings.Tag, "tag", "", "Create and increment semver tag part (major|minor|patch)")
 	flags.BoolVar(
 		&settings.UseGlobalGitignore, "use-global-gitignore", true, "Use global gitignore")
+	flags.IntVar(
+		&settings.MaxDiffSizeBytes, "max-diff-size-bytes", 256*1024, //256KB
+		"Maximum diff size in bytes to include in prompts")
 
 	cmd.AddCommand(newVersionCommand())
 

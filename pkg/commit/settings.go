@@ -19,6 +19,7 @@ type Settings struct {
 	Push               bool          // Push after commit
 	Tag                string        // Tag increment type: major, minor, or patch
 	UseGlobalGitignore bool          // Use global gitignore from git config core.excludesFile
+	MaxDiffSizeBytes   int           // Maximum diff size in bytes to consider for commit message generation
 }
 
 func (o *Settings) Validate() error {

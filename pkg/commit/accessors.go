@@ -20,7 +20,7 @@ type gitOperationsAccessor interface {
 	IsGitRepository() bool
 	UnstageAll() error
 	StageFiles(excludePatterns, includePatterns []string, useGlobalGitignore bool) ([]string, error)
-	GetStagedDiff() (string, error)
+	GetStagedDiff(maxSizeBytes int) (string, error)
 	GetCurrentBranch() (string, error)
 	CreateCommit(message string) error
 	Push() (string, error)

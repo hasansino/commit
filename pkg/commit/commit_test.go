@@ -3,7 +3,6 @@ package commit
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -376,12 +375,15 @@ func (a *testGitOperationsAdapter) UnstageAll() error {
 	return a.gitOps.UnstageAll()
 }
 
-func (a *testGitOperationsAdapter) StageFiles(excludePatterns, includePatterns []string, useGlobalGitignore bool) ([]string, error) {
+func (a *testGitOperationsAdapter) StageFiles(
+	excludePatterns, includePatterns []string,
+	useGlobalGitignore bool,
+) ([]string, error) {
 	return a.gitOps.StageFiles(excludePatterns, includePatterns, useGlobalGitignore)
 }
 
-func (a *testGitOperationsAdapter) GetStagedDiff() (string, error) {
-	return a.gitOps.GetStagedDiff()
+func (a *testGitOperationsAdapter) GetStagedDiff(maxSize int) (string, error) {
+	return a.gitOps.GetStagedDiff(maxSize)
 }
 
 func (a *testGitOperationsAdapter) GetCurrentBranch() (string, error) {
@@ -445,7 +447,7 @@ func (s *simpleTestAdapter) GenerateCommitMessages(
 
 type mockProviderForTest struct{}
 
-func (m *mockProviderForTest) Name() string { return "test" }
+func (m *mockProviderForTest) Name() string      { return "test" }
 func (m *mockProviderForTest) IsAvailable() bool { return true }
 func (m *mockProviderForTest) Ask(ctx context.Context, prompt string) ([]string, error) {
 	return []string{"test message"}, nil
@@ -539,7 +541,7 @@ func TestService_Execute(t *testing.T) {
 	tests := []struct {
 		name        string
 		settings    *Settings
-		setupMocks  func(*mocks.MockgitOperationsAccessor) 
+		setupMocks  func(*mocks.MockgitOperationsAccessor)
 		aiAdapter   *simpleTestAdapter
 		wantErr     bool
 		errContains string
@@ -549,8 +551,8 @@ func TestService_Execute(t *testing.T) {
 			settings: &Settings{
 				Timeout: 30 * time.Second,
 			},
-			aiAdapter: &simpleTestAdapter{hasProviders: false},
-			setupMocks: func(git *mocks.MockgitOperationsAccessor) {},
+			aiAdapter:   &simpleTestAdapter{hasProviders: false},
+			setupMocks:  func(git *mocks.MockgitOperationsAccessor) {},
 			wantErr:     true,
 			errContains: "no api keys found in environment",
 		},
@@ -602,7 +604,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("  ", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("  ", nil)
 			},
 			wantErr: false,
 		},
@@ -616,7 +618,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
 				git.EXPECT().GetCurrentBranch().Return("", errors.New("branch error"))
 			},
 			wantErr:     true,
@@ -632,7 +634,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
 				git.EXPECT().GetCurrentBranch().Return("main", nil)
 			},
 			wantErr:     true,
@@ -649,7 +651,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
 				git.EXPECT().GetCurrentBranch().Return("main", nil)
 			},
 			wantErr:     true,
@@ -667,7 +669,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
 				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
 			},
 			wantErr: false,
@@ -684,7 +686,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
 				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
 				git.EXPECT().CreateCommit("test commit").Return(errors.New("commit error"))
 			},
@@ -703,7 +705,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
 				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
 				git.EXPECT().CreateCommit("test commit").Return(nil)
 			},
@@ -722,7 +724,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
 				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
 				git.EXPECT().CreateCommit("test commit").Return(nil)
 				git.EXPECT().Push().Return("https://github.com/user/repo/pull/new", nil)
@@ -742,7 +744,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
 				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
 				git.EXPECT().CreateCommit("test commit").Return(nil)
 				git.EXPECT().Push().Return("", errors.New("push error"))
@@ -763,7 +765,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
 				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
 				git.EXPECT().CreateCommit("test commit").Return(nil)
 				git.EXPECT().GetLatestTag().Return("v1.0.0", nil)
@@ -786,7 +788,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository().Return(true)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
-				git.EXPECT().GetStagedDiff().Return("diff content", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
 				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
 				git.EXPECT().CreateCommit("test commit").Return(nil)
 				git.EXPECT().Push().Return("", nil)
@@ -805,11 +807,11 @@ func TestService_Execute(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockGit := mocks.NewMockgitOperationsAccessor(ctrl)
-			
+
 			service := &Service{
-				logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
-				settings: tt.settings,
-				gitOps:   &testGitOperationsAdapter{gitOps: mockGit},
+				logger:    slog.New(slog.DiscardHandler),
+				settings:  tt.settings,
+				gitOps:    &testGitOperationsAdapter{gitOps: mockGit},
 				aiService: tt.aiAdapter,
 			}
 

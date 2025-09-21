@@ -383,51 +383,92 @@ func isSimpleGlobPattern(pattern string) bool {
 		(strings.Contains(pattern, "*") || strings.Contains(pattern, "?"))
 }
 
-func (g *gitOperations) GetStagedDiff() (string, error) {
-	// Use git diff --cached to get the actual staged diff
-	cmd := exec.Command("git", "diff", "--cached")
+var contextLevels = []int{5, 3, 2, 1, 0}
+
+// getFilteredStagedFiles returns list of staged files excluding pre-defined patterns
+func (g *gitOperations) getFilteredStagedFiles() ([]string, error) {
+	cmd := exec.Command("git", "diff", "--cached", "--name-only")
 	output, err := cmd.Output()
 	if err != nil {
+		return nil, err
+	}
+
+	files := strings.Split(strings.TrimSpace(string(output)), "\n")
+
+	filtered := make([]string, 0, len(files))
+	for _, file := range files {
+		if len(file) > 0 { // nothing yet
+			filtered = append(filtered, file)
+		}
+	}
+
+	return filtered, nil
+}
+
+func (g *gitOperations) GetStagedDiff(maxSizeBytes int) (string, error) {
+	diffFiles, err := g.getFilteredStagedFiles()
+	if err != nil {
+		return "", fmt.Errorf("failed to get staged files: %w", err)
+	}
+
+	if len(diffFiles) == 0 {
+		return "", nil // No files to diff after filtering
+	}
+
+	// Common diff options optimized for AI consumption
+	baseDiffOpts := []string{
+		"diff",
+		"--cached",
+		"--no-color",                // Remove ANSI color codes that confuse AI
+		"--no-ext-diff",             // Disable external diff drivers
+		"--no-prefix",               // Remove a/ b/ prefixes for cleaner output
+		"--diff-algorithm=patience", // Better for code with many similar lines
+		"--ignore-space-at-eol",     // Ignore trailing whitespace changes
+		"--ignore-cr-at-eol",        // Ignore carriage return differences
+		"--function-context",        // Include entire function in diff for better AI understanding
+		"--find-renames=50",         // Detect renames with 50% similarity threshold
+	}
+
+	// Try different context levels to fit within maxSize
+	for _, contextLevel := range contextLevels {
+		contextOpts := append([]string{}, baseDiffOpts...)
+		contextOpts = append(contextOpts, fmt.Sprintf("-U%d", contextLevel))
+		contextOpts = append(contextOpts, "--")
+		contextOpts = append(contextOpts, diffFiles...)
+
+		cmd := exec.Command("git", contextOpts...)
+		output, err := cmd.Output()
+		if err != nil {
+			// If the command fails, it might be because no files match - return empty diff
+			if strings.Contains(err.Error(), "exit status 128") {
+				return "", nil
+			}
+			return "", fmt.Errorf("failed to get staged diff: %w", err)
+		}
+
+		diff := string(output)
+		if len(diff) <= maxSizeBytes {
+			return diff, nil
+		}
+	}
+
+	contextOpts := append([]string{}, baseDiffOpts...)
+	contextOpts = append(contextOpts, "-U0")
+	contextOpts = append(contextOpts, "--")
+	contextOpts = append(contextOpts, diffFiles...)
+
+	cmd := exec.Command("git", contextOpts...)
+	output, err := cmd.Output()
+	if err != nil {
+		if strings.Contains(err.Error(), "exit status 128") {
+			return "", nil
+		}
 		return "", fmt.Errorf("failed to get staged diff: %w", err)
 	}
 
 	diff := string(output)
-
-	// If diff is empty, check if there are any staged files
-	if strings.TrimSpace(diff) == "" {
-		worktree, err := g.repo.Worktree()
-		if err != nil {
-			return "", fmt.Errorf("failed to get worktree: %w", err)
-		}
-
-		status, err := worktree.Status()
-		if err != nil {
-			return "", fmt.Errorf("failed to get status: %w", err)
-		}
-
-		// Check if there are any staged files
-		hasStagedFiles := false
-		for _, fileStatus := range status {
-			if fileStatus.Staging != 0 {
-				hasStagedFiles = true
-				break
-			}
-		}
-
-		if !hasStagedFiles {
-			return "", nil
-		}
-
-		// If there are staged files but no diff, they might be new files
-		// Try with --cached --no-index or check for untracked files
-		cmd = exec.Command("git", "diff", "--cached", "--stat")
-		output, _ = cmd.Output()
-		if len(output) > 0 {
-			// There are staged changes, get them with more options
-			cmd = exec.Command("git", "diff", "--cached", "--no-ext-diff")
-			output, _ = cmd.Output()
-			diff = string(output)
-		}
+	if len(diff) > maxSizeBytes {
+		return diff[:maxSizeBytes], nil
 	}
 
 	return diff, nil
