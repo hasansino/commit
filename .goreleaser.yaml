@@ -128,3 +128,23 @@ signs:
       - "--yes"
     artifacts: checksum
     output: true
+
+homebrew_casks:
+  - name: commit
+    ids:
+      - commit
+    binary: commit
+    license: "MIT"
+    repository:
+      owner: hasansino
+      name: homebrew-commit
+      branch: master
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+    homepage: "https://github.com/hasansino/commit"
+    description: "Commit helper tool"
+    dependencies:
+      - formula: git

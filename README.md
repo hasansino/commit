@@ -9,9 +9,24 @@
 
 Commit helper tool.
 
+## Installation
+
+### Homebrew
+
+```bash
+brew tap hasansino/commit
+brew install commit
+```
+
+### Go
+
 ```bash
 go install github.com/hasansino/commit@latest
 ```
+
+### Download Binary
+
+Download the latest binary from the [releases page](https://github.com/hasansino/commit/releases).
 
 ## Features
 
