@@ -50,7 +50,7 @@ jobs:
       - name: 'Run GoReleaser'
         uses: goreleaser/goreleaser-action@v6
         with:
-          version: 'v1.26.2'  # Using v1.26.2 for brews support
+          version: '~> v2'
           args: release --clean --config .goreleaser.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
