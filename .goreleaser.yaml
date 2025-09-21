@@ -129,12 +129,12 @@ signs:
     artifacts: checksum
     output: true
 
-homebrew_casks:
+brews:
   - name: commit
     ids:
       - commit
-    binary: commit
     license: "MIT"
+    directory: .
     repository:
       owner: hasansino
       name: homebrew-commit
@@ -147,4 +147,6 @@ homebrew_casks:
     homepage: "https://github.com/hasansino/commit"
     description: "Commit helper tool"
     dependencies:
-      - formula: git
+      - name: git
+    test: |-
+      system "#{bin}/commit", "--help"
