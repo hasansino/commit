@@ -31,7 +31,7 @@ type gitOperationsAccessor interface {
 }
 
 type aiServiceAccessor interface {
-	GetProviders() map[string]providerAccessor
+	NumProviders() int
 	GenerateCommitMessages(
 		ctx context.Context,
 		diff, branch string, files []string,

@@ -14,12 +14,12 @@ type Settings struct {
 	DryRun             bool          // Show what would be committed without actually committing
 	ExcludePatterns    []string      // File patterns to exclude from the commit
 	IncludePatterns    []string      // File patterns to include in the commit
-	Modules            []string      // List of modules to enable
 	MultiLine          bool          // Use multi-line commit messages
 	Push               bool          // Push after commit
 	Tag                string        // Tag increment type: major, minor, or patch
 	UseGlobalGitignore bool          // Use global gitignore from git config core.excludesFile
 	MaxDiffSizeBytes   int           // Maximum diff size in bytes to consider for commit message generation
+	JiraTransformType  string        // Jira commit message transformation type: prefix/suffix/none
 }
 
 func (o *Settings) Validate() error {

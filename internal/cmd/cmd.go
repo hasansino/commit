@@ -6,15 +6,19 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/lmittmann/tint"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/hasansino/commit/internal/cmdutil"
 	"github.com/hasansino/commit/pkg/commit"
 )
+
+const envPrefix = "COMMIT"
 
 const (
 	exitOK    = 0
@@ -22,16 +26,32 @@ const (
 )
 
 func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
-	settings := new(commit.Settings)
 	cmd := &cobra.Command{
 		Use:   "commit",
 		Short: "Commit helper tool",
 		Long:  `Commit helper tool`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCommitCommand(f, settings)
-		},
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PreRunE: func(cmd *cobra.Command, args []string) error {
 			initLogging(f.Options().LogLevel)
+			return viper.BindPFlags(cmd.Flags())
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			settings := &commit.Settings{
+				Providers:          viper.GetStringSlice("providers"),
+				Timeout:            viper.GetDuration("timeout"),
+				CustomPrompt:       viper.GetString("prompt"),
+				First:              viper.GetBool("first"),
+				Auto:               viper.GetBool("auto"),
+				DryRun:             viper.GetBool("dry-run"),
+				ExcludePatterns:    viper.GetStringSlice("exclude"),
+				IncludePatterns:    viper.GetStringSlice("include-only"),
+				MultiLine:          viper.GetBool("multi-line"),
+				Push:               viper.GetBool("push"),
+				Tag:                viper.GetString("tag"),
+				UseGlobalGitignore: viper.GetBool("use-global-gitignore"),
+				MaxDiffSizeBytes:   viper.GetInt("max-diff-size-bytes"),
+				JiraTransformType:  viper.GetString("jira-transform-type"),
+			}
+			return runCommitCommand(f, settings)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: false,
@@ -46,40 +66,42 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 
+	viper.SetEnvPrefix(envPrefix)
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
+
 	f.BindFlags(cmd.PersistentFlags())
 
 	flags := cmd.Flags()
 
-	flags.StringSliceVar(
-		&settings.Providers, "providers", []string{},
-		"Providers to use, leave empty to for all (claude|openai|gemini)")
-	flags.DurationVar(
-		&settings.Timeout, "timeout", 10*time.Second, "API timeout")
-	flags.StringVar(
-		&settings.CustomPrompt, "prompt", "", "Custom prompt template")
-	flags.BoolVar(
-		&settings.First, "first", false, "Use first received message and discard others")
-	flags.BoolVar(
-		&settings.Auto, "auto", false, "Auto-commit with first suggestion")
-	flags.BoolVar(
-		&settings.DryRun, "dry-run", false, "Show what would be committed without committing")
-	flags.StringSliceVar(
-		&settings.ExcludePatterns, "exclude", nil, "Exclude patterns")
-	flags.StringSliceVar(
-		&settings.IncludePatterns, "include-only", nil, "Only include specific patterns")
-	flags.StringSliceVar(
-		&settings.Modules, "modules", []string{"jira"}, "Modules to enable")
-	flags.BoolVar(
-		&settings.MultiLine, "multi-line", true, "Use multi-line commit messages")
-	flags.BoolVar(
-		&settings.Push, "push", false, "Push after committing")
-	flags.StringVar(
-		&settings.Tag, "tag", "", "Create and increment semver tag part (major|minor|patch)")
-	flags.BoolVar(
-		&settings.UseGlobalGitignore, "use-global-gitignore", true, "Use global gitignore")
-	flags.IntVar(
-		&settings.MaxDiffSizeBytes, "max-diff-size-bytes", 256*1024, //256KB
-		"Maximum diff size in bytes to include in prompts")
+	flags.StringSlice("providers", []string{},
+		"Providers to use, leave empty for all (claude|openai|gemini).")
+	flags.Duration("timeout", 10*time.Second,
+		"API timeout.")
+	flags.String("prompt", "",
+		"Custom prompt template.")
+	flags.Bool("first", false,
+		"Use first received message and discard others.")
+	flags.Bool("auto", false,
+		"Auto-commit with first suggestion.")
+	flags.Bool("dry-run", false,
+		"Show what would be committed without committing.")
+	flags.StringSlice("exclude", nil,
+		"Exclude patterns.")
+	flags.StringSlice("include-only", nil,
+		"Only include specific patterns.")
+	flags.Bool("multi-line", true,
+		"Use multi-line commit messages.")
+	flags.Bool("push", false,
+		"Push after committing.")
+	flags.String("tag", "",
+		"Create and increment semver tag part (major|minor|patch).")
+	flags.Bool("use-global-gitignore", true,
+		"Use global gitignore.")
+	flags.Int("max-diff-size-bytes", 64*1024, // 64KB
+		"Maximum diff size in bytes to include in prompts.")
+	flags.String("jira-transform-type", "none",
+		"Jira commit message transformation type: prefix|suffix|none.")
 
 	cmd.AddCommand(newVersionCommand())
 

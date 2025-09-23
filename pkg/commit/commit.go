@@ -46,18 +46,25 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 	svc.gitOps = git
 	svc.aiService = newAIService(svc.logger, settings.Timeout)
 
-	for _, name := range settings.Modules {
-		switch name {
-		case "jira":
-			svc.modules = append(svc.modules, modules.NewJIRAPrefixDetector())
-		}
+	var (
+		jiraMsgTransformType modules.JiraTransformType
+	)
+	switch strings.ToLower(settings.JiraTransformType) {
+	case "prefix":
+		jiraMsgTransformType = modules.JiraTransformTypePrefix
+	case "suffix":
+		jiraMsgTransformType = modules.JiraTransformTypeSuffix
+	default:
+		jiraMsgTransformType = modules.JiraTransformTypeNone
 	}
+
+	svc.modules = append(svc.modules, modules.NewJIRATaskDetector(jiraMsgTransformType))
 
 	return svc, nil
 }
 
 func (s *Service) Execute(ctx context.Context) error {
-	if len(s.aiService.GetProviders()) == 0 {
+	if s.aiService.NumProviders() == 0 {
 		s.logger.WarnContext(ctx, "No providers configured")
 		return fmt.Errorf("no api keys found in environment")
 	}
@@ -97,8 +104,6 @@ func (s *Service) Execute(ctx context.Context) error {
 		s.logger.ErrorContext(ctx, "Failed to get staged diff", "error", err)
 		return fmt.Errorf("failed to get diff: %w", err)
 	}
-
-	fmt.Println(diff)
 
 	if strings.TrimSpace(diff) == "" {
 		s.logger.WarnContext(ctx, "No changes staged for commit")
@@ -182,15 +187,15 @@ func (s *Service) Execute(ctx context.Context) error {
 	}
 
 	for _, module := range s.modules {
+		var (
+			updatedMessage string
+			workDone       bool
+			err            error
+		)
+
 		s.logger.DebugContext(ctx, "Running module", "name", module.Name())
-		commitMessage, workDone, err := module.TransformCommitMessage(ctx, branch, commitMessage)
-		if !workDone {
-			s.logger.DebugContext(
-				ctx, "Module did not transform commit message",
-				"module", module.Name(),
-			)
-			continue
-		}
+
+		updatedMessage, workDone, err = module.TransformCommitMessage(ctx, branch, commitMessage)
 		if err != nil {
 			s.logger.ErrorContext(
 				ctx, "Failed to transform commit message",
@@ -199,11 +204,25 @@ func (s *Service) Execute(ctx context.Context) error {
 			)
 			continue
 		}
+		if !workDone {
+			s.logger.DebugContext(
+				ctx, "Module did not transform commit message",
+				"module", module.Name(),
+			)
+			continue
+		}
+
 		s.logger.DebugContext(
 			ctx, "Transformed commit message",
 			"module", module.Name(),
-			"message", commitMessage,
+			"message", updatedMessage,
 		)
+
+		// ----
+		// ---- // ----
+		commitMessage = updatedMessage // ---- pew pew
+		// ---- // ----
+		// ----
 	}
 
 	commitMessage = strings.Trim(commitMessage, "\n")
@@ -268,6 +287,7 @@ func (s *Service) Execute(ctx context.Context) error {
 		}
 	} else {
 		s.logger.WarnContext(ctx, "Dry run enabled, no side effects created")
+		s.logger.InfoContext(ctx, "Final commit message", "message", commitMessage)
 	}
 
 	return nil

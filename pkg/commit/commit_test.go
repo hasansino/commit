@@ -31,11 +31,11 @@ func TestNewCommitService(t *testing.T) {
 				DryRun:             false,
 				ExcludePatterns:    []string{},
 				IncludePatterns:    []string{},
-				Modules:            []string{},
 				MultiLine:          false,
 				Push:               false,
 				Tag:                "",
 				UseGlobalGitignore: false,
+				JiraTransformType:  "none",
 			},
 			opts:      []Option{},
 			expectErr: false,
@@ -67,10 +67,10 @@ func TestNewCommitService(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "valid settings with modules",
+			name: "valid settings with jira transform",
 			settings: &Settings{
-				Timeout: 30 * time.Second,
-				Modules: []string{"jira"},
+				Timeout:           30 * time.Second,
+				JiraTransformType: "suffix",
 			},
 			opts:      []Option{},
 			expectErr: false,
@@ -118,12 +118,10 @@ func TestNewCommitService(t *testing.T) {
 				t.Error("NewCommitService() should initialize AI service")
 			}
 
-			if len(tt.settings.Modules) > 0 && len(service.modules) != len(tt.settings.Modules) {
-				t.Errorf(
-					"NewCommitService() initialized %d modules, want %d",
-					len(service.modules),
-					len(tt.settings.Modules),
-				)
+			if tt.settings.JiraTransformType != "" && tt.settings.JiraTransformType != "none" {
+				if len(service.modules) == 0 {
+					t.Error("NewCommitService() should initialize jira module when JiraTransformType is set")
+				}
 			}
 		})
 	}
@@ -222,11 +220,9 @@ func TestService_Execute_NoProviders(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	// Create mock AI service with no providers
-	mockAIService := &aiService{
-		logger:    slog.New(slog.DiscardHandler),
-		timeout:   30 * time.Second,
-		providers: map[string]providerAccessor{}, // Empty providers
+	// Create test AI service adapter with no providers
+	testAIService := &simpleTestAdapter{
+		hasProviders: false,
 	}
 
 	// Mock git operations to avoid actual git calls
@@ -235,7 +231,7 @@ func TestService_Execute_NoProviders(t *testing.T) {
 	service := &Service{
 		logger:    slog.New(slog.DiscardHandler),
 		settings:  &Settings{Timeout: 30 * time.Second},
-		aiService: mockAIService,
+		aiService: testAIService,
 		gitOps:    mockGitOps,
 	}
 
@@ -342,10 +338,8 @@ func TestService_Execute_ValidationFlow(t *testing.T) {
 				logger:   slog.New(slog.DiscardHandler),
 				settings: tt.settings,
 				modules:  []moduleAccessor{},
-				aiService: &aiService{
-					logger:    slog.New(slog.DiscardHandler),
-					timeout:   30 * time.Second,
-					providers: map[string]providerAccessor{}, // No providers
+				aiService: &simpleTestAdapter{
+					hasProviders: false, // No providers
 				},
 			}
 
@@ -421,13 +415,11 @@ type simpleTestAdapter struct {
 	genErr       error
 }
 
-func (s *simpleTestAdapter) GetProviders() map[string]providerAccessor {
+func (s *simpleTestAdapter) NumProviders() int {
 	if s.hasProviders {
-		return map[string]providerAccessor{
-			"test": &mockProviderForTest{},
-		}
+		return 1
 	}
-	return map[string]providerAccessor{}
+	return 0
 }
 
 func (s *simpleTestAdapter) GenerateCommitMessages(

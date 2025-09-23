@@ -51,8 +51,8 @@ func newAIService(logger *slog.Logger, timeout time.Duration) *aiService {
 	}
 }
 
-func (s *aiService) GetProviders() map[string]providerAccessor {
-	return s.providers
+func (s *aiService) NumProviders() int {
+	return len(s.providers)
 }
 
 func (s *aiService) FilterProviders(requested []string) map[string]providerAccessor {

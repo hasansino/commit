@@ -6,6 +6,16 @@ import (
 	"strings"
 )
 
+type JiraTransformType string
+
+const JiraModuleName = "jira_task_detector"
+
+const (
+	JiraTransformTypeNone   JiraTransformType = "none"
+	JiraTransformTypePrefix JiraTransformType = "prefix"
+	JiraTransformTypeSuffix JiraTransformType = "suffix"
+)
+
 var jiraPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`^([A-Z]+-\d+)`),
 	regexp.MustCompile(`^feature/([A-Z]+-\d+)(?:-.*)?$`),
@@ -15,29 +25,38 @@ var jiraPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`/([A-Z]+-\d+)(?:-|$)`),
 }
 
-type JIRAPrefixDetector struct{}
-
-func NewJIRAPrefixDetector() *JIRAPrefixDetector {
-	return &JIRAPrefixDetector{}
+type JIRATaskDetector struct {
+	commitMsgTransformType JiraTransformType
 }
 
-func (j *JIRAPrefixDetector) Name() string {
-	return "jira"
+func NewJIRATaskDetector(msgTransformType JiraTransformType) *JIRATaskDetector {
+	return &JIRATaskDetector{
+		commitMsgTransformType: msgTransformType,
+	}
 }
 
-func (j *JIRAPrefixDetector) TransformPrompt(_ context.Context, prompt string) (string, bool, error) {
+func (j *JIRATaskDetector) Name() string {
+	return JiraModuleName
+}
+
+func (j *JIRATaskDetector) TransformPrompt(_ context.Context, prompt string) (string, bool, error) {
 	return prompt, false, nil
 }
-func (j *JIRAPrefixDetector) TransformCommitMessage(_ context.Context, branch, message string) (string, bool, error) {
-	jiraPrefix := j.detectJiraID(branch)
-	if jiraPrefix == "" {
+func (j *JIRATaskDetector) TransformCommitMessage(_ context.Context, branch, message string) (string, bool, error) {
+	if j.commitMsgTransformType == JiraTransformTypeNone {
 		return message, false, nil
 	}
-	commitMessage := j.addJiraID(message, jiraPrefix)
-	return commitMessage, true, nil
+
+	jiraID := j.detectJiraID(branch)
+
+	if jiraID == "" {
+		return message, false, nil
+	}
+
+	return j.addJiraID(message, jiraID), true, nil
 }
 
-func (j *JIRAPrefixDetector) detectJiraID(branchName string) string {
+func (j *JIRATaskDetector) detectJiraID(branchName string) string {
 	for _, pattern := range jiraPatterns {
 		matches := pattern.FindStringSubmatch(branchName)
 		if len(matches) > 1 && matches[1] != "" {
@@ -47,20 +66,26 @@ func (j *JIRAPrefixDetector) detectJiraID(branchName string) string {
 	return ""
 }
 
-func (j *JIRAPrefixDetector) addJiraID(commitMessage, jiraID string) string {
+func (j *JIRATaskDetector) addJiraID(commitMessage, jiraID string) string {
 	if jiraID == "" {
 		return commitMessage
 	}
-
-	if strings.Contains(commitMessage, "("+jiraID+")") {
+	if strings.Contains(commitMessage, "("+jiraID+")") || strings.HasPrefix(commitMessage, jiraID+": ") {
 		return commitMessage
 	}
 
-	lines := strings.SplitN(commitMessage, "\n", 2)
-	if len(lines) == 1 {
-		return commitMessage + " (" + jiraID + ")"
+	switch j.commitMsgTransformType {
+	case JiraTransformTypePrefix:
+		// Add as prefix: JIRA-123: message
+		lines := strings.SplitN(commitMessage, "\n", 2)
+		lines[0] = jiraID + ": " + lines[0]
+		return strings.Join(lines, "\n")
+	case JiraTransformTypeSuffix:
+		// Add as suffix: message (JIRA-123)
+		lines := strings.SplitN(commitMessage, "\n", 2)
+		lines[0] = lines[0] + " (" + jiraID + ")"
+		return strings.Join(lines, "\n")
+	default:
+		return commitMessage
 	}
-
-	lines[0] = lines[0] + " (" + jiraID + ")"
-	return strings.Join(lines, "\n")
 }

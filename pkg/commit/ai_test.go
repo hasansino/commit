@@ -40,14 +40,14 @@ func TestNewAIService(t *testing.T) {
 		t.Error("NewAIService() should initialize providers map")
 	}
 
-	// Verify GetProviders returns the internal map
-	providers := service.GetProviders()
-	if providers == nil {
-		t.Error("GetProviders() should return non-nil map")
+	// Verify NumProviders works correctly
+	numProviders := service.NumProviders()
+	if numProviders < 0 {
+		t.Error("NumProviders() should return non-negative value")
 	}
 
 	// Verify all providers in the map are valid
-	for name, provider := range providers {
+	for name, provider := range service.providers {
 		if provider == nil {
 			t.Errorf("Provider %s should not be nil", name)
 		}
@@ -57,21 +57,18 @@ func TestNewAIService(t *testing.T) {
 	}
 }
 
-func TestAIService_GetProviders(t *testing.T) {
+func TestAIService_NumProviders(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	service := newAIService(logger, 30*time.Second)
 
-	providers := service.GetProviders()
+	numProviders := service.NumProviders()
 
-	if providers == nil {
-		t.Error("GetProviders() returned nil")
+	if numProviders < 0 {
+		t.Error("NumProviders() should return non-negative value")
 	}
 
-	// Verify that GetProviders returns a valid map (may be empty if no env vars set)
-	// Note: This test was checking len(providers) < 0 which is impossible since len() cannot be negative
-
-	// Verify the map is accessible and providers are valid if present
-	for name, provider := range providers {
+	// Verify the internal providers map is valid
+	for name, provider := range service.providers {
 		if name == "" {
 			t.Error("Provider name should not be empty")
 		}
@@ -81,6 +78,11 @@ func TestAIService_GetProviders(t *testing.T) {
 		if provider.Name() != name {
 			t.Errorf("Provider key %s does not match provider name %s", name, provider.Name())
 		}
+	}
+
+	// Verify NumProviders matches actual count
+	if numProviders != len(service.providers) {
+		t.Errorf("NumProviders() = %d, want %d", numProviders, len(service.providers))
 	}
 }
 

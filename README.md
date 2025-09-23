@@ -37,7 +37,7 @@ Download the latest binary from the [releases page](https://github.com/hasansino
 - Option to push changes after committing to relevant remote branch
 - Dry-run mode
 - GPG signing according to user git configuration, supporting password input
-- Modules to extend functionality (e.g., JIRA prefixes)
+- Detects JIRA issue keys in branch name and adds them to commit message
 
 ## Demo
 
@@ -57,24 +57,26 @@ Available Commands:
   version     Version information
 
 Flags:
-      --auto                   Auto-commit with first suggestion
-      --dry-run                Show what would be committed without committing
-      --exclude strings        Exclude patterns
-      --first                  Use first received message and discard others
-  -h, --help                   help for commit
-      --include-only strings   Only include specific patterns
-      --log-level string       Logging level (debug, info, warn, error) (default "info")
-      --modules strings        Modules to enable (default 'jira')
-      --multi-line             Use multi-line commit messages (default true)
-      --prompt string          Custom prompt template
-      --providers strings      Providers to use, leave empty to for all (claude|openai|gemini)
-      --push                   Push after committing
-      --tag string             Create and increment semver tag part (major|minor|patch)
-      --timeout duration       API timeout (default 10s)
-      --use-global-gitignore   Use global gitignore (default true)
+      --auto                        Auto-commit with first suggestion
+      --dry-run                     Show what would be committed without committing
+      --exclude strings             Exclude patterns
+      --first                       Use first received message and discard others
+      --include-only strings        Only include specific patterns
+      --jira-transform-type string  Jira commit message transformation type: prefix|suffix|none. (default "none")
+      --log-level string            Logging level (debug, info, warn, error) (default "info")
+      --max-diff-size-bytes int     Maximum diff size in bytes to include in prompts (default 262144)
+      --multi-line                  Use multi-line commit messages (default true)
+      --prompt string               Custom prompt template
+      --providers strings           Providers to use, leave empty to for all (claude|openai|gemini)
+      --push                        Push after committing
+      --tag string                  Create and increment semver tag part (major|minor|patch)
+      --timeout duration            API timeout (default 10s)
+      --use-global-gitignore        Use global gitignore (default true)
 
 Use "commit [command] --help" for more information about a command.
 ```
+
+All flags can also be set via environment variables, e.g. `COMMIT_AUTO=true`.
 
 ## Configuration
 
@@ -86,9 +88,3 @@ At least one *_API_KEY variable is required to use this tool.
 - OPENAI_MODEL (optional, defaults to "gpt-4-turbo")
 - GEMINI_API_KEY
 - GEMINI_MODEL (optional, defaults to "gemini-1.5-flash")
-
-### Modules
-
-#### Jira (jira)
-
-Detects JIRA issue keys in branch name and adds them to commit message.
