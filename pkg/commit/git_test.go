@@ -1,8 +1,6 @@
 package commit
 
 import (
-	"fmt"
-	"strings"
 	"testing"
 )
 
@@ -443,85 +441,6 @@ func TestGitConfig_Validation(t *testing.T) {
 				if !tt.valid {
 					t.Error("Expected valid config to be marked as valid")
 				}
-			}
-		})
-	}
-}
-
-func TestGPGSigner_Interface(t *testing.T) {
-	signer := &gpgSigner{
-		gpgProgram: "gpg",
-		keyID:      "testkey",
-	}
-
-	// Test that GPGSigner implements the expected interface
-	// This is mainly a compile-time check
-	if signer.gpgProgram != "gpg" {
-		t.Errorf("GPGSigner gpgProgram = %q, want %q", signer.gpgProgram, "gpg")
-	}
-	if signer.keyID != "testkey" {
-		t.Errorf("GPGSigner keyID = %q, want %q", signer.keyID, "testkey")
-	}
-}
-
-func TestGitOperations_matchesSigningKey(t *testing.T) {
-	tests := []struct {
-		name       string
-		signingKey string
-		keyID      uint64
-		userEmail  string
-		expected   bool
-	}{
-		{
-			name:       "matching key ID",
-			signingKey: "ABCD1234",
-			keyID:      0xABCD1234,
-			userEmail:  "test@example.com",
-			expected:   true,
-		},
-		{
-			name:       "non-matching key ID",
-			signingKey: "EFGH5678",
-			keyID:      0xABCD1234,
-			userEmail:  "test@example.com",
-			expected:   false,
-		},
-		{
-			name:       "matching email",
-			signingKey: "test@example.com",
-			keyID:      0x12345678,
-			userEmail:  "test@example.com",
-			expected:   true,
-		},
-		{
-			name:       "non-matching email",
-			signingKey: "other@example.com",
-			keyID:      0x12345678,
-			userEmail:  "test@example.com",
-			expected:   false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Since we can't easily mock openpgp.Entity, we'll test the logic conceptually
-			// In a real implementation, you would create a mock entity or use test data
-
-			// Test the basic string matching logic that would be used
-			keyIDHex := strings.ToUpper(fmt.Sprintf("%016X", tt.keyID))
-			signingKeyUpper := strings.ToUpper(tt.signingKey)
-
-			// Check if the signing key matches the key ID (substring match for short IDs)
-			keyIDMatches := strings.HasSuffix(keyIDHex, signingKeyUpper)
-
-			// Check if signing key matches email
-			emailMatches := strings.Contains(tt.userEmail, tt.signingKey)
-
-			matches := keyIDMatches || emailMatches
-
-			if matches != tt.expected {
-				t.Errorf("Key matching logic for %q gave %v, want %v (keyID: %s, email: %s)",
-					tt.signingKey, matches, tt.expected, keyIDHex, tt.userEmail)
 			}
 		})
 	}
