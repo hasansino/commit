@@ -18,6 +18,9 @@ type moduleAccessor interface {
 
 type gitOperationsAccessor interface {
 	IsGitRepository() bool
+	GetRepoState() (string, error)
+	HasConflicts() (bool, []string, error)
+	GetConflictedFiles() ([]string, error)
 	UnstageAll() error
 	StageFiles(excludePatterns, includePatterns []string, useGlobalGitignore bool) ([]string, error)
 	GetStagedDiff(maxSizeBytes int) (string, error)

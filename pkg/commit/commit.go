@@ -74,6 +74,28 @@ func (s *Service) Execute(ctx context.Context) error {
 		return fmt.Errorf("not a git repository")
 	}
 
+	repoStateStr, err := s.gitOps.GetRepoState()
+	if err != nil {
+		s.logger.ErrorContext(ctx, "Failed to get repository state", "error", err)
+		return fmt.Errorf("failed to get repository state: %w", err)
+	}
+
+	if repoStateStr != RepoStateNormal {
+		s.logger.ErrorContext(ctx, "Repository not in normal state", "state", repoStateStr)
+		return fmt.Errorf("repository is in %s state, cannot create commit", repoStateStr)
+	}
+
+	hasConflicts, _, err := s.gitOps.HasConflicts()
+	if err != nil {
+		s.logger.ErrorContext(ctx, "Failed to check for conflicts", "error", err)
+		return fmt.Errorf("failed to check for conflicts: %w", err)
+	}
+
+	if hasConflicts {
+		s.logger.ErrorContext(ctx, "Unresolved conflicts detected")
+		return fmt.Errorf("unresolved conflicts detected")
+	}
+
 	s.logger.DebugContext(ctx, "Unstaging all files...")
 
 	if err := s.gitOps.UnstageAll(); err != nil {
@@ -130,6 +152,11 @@ func (s *Service) Execute(ctx context.Context) error {
 		return fmt.Errorf("failed to generate suggestions: %w", err)
 	}
 
+	return s.processCommitMessages(ctx, messages, branch)
+}
+
+// processCommitMessages handles the commit message selection and commit creation
+func (s *Service) processCommitMessages(ctx context.Context, messages map[string]string, branch string) error {
 	var commitMessage string
 
 	if s.settings.Auto {
@@ -183,12 +210,6 @@ func (s *Service) Execute(ctx context.Context) error {
 	if len(commitMessage) == 0 {
 		s.logger.WarnContext(ctx, "No commit message provided")
 		return fmt.Errorf("no commit message provided")
-	}
-
-	branch, err = s.gitOps.GetCurrentBranch()
-	if err != nil {
-		s.logger.ErrorContext(ctx, "Failed to get current branch", "error", err)
-		return fmt.Errorf("failed to get current branch: %w", err)
 	}
 
 	for _, module := range s.modules {

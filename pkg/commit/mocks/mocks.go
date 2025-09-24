@@ -205,6 +205,21 @@ func (mr *MockgitOperationsAccessorMockRecorder) CreateTag(tag, message any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTag", reflect.TypeOf((*MockgitOperationsAccessor)(nil).CreateTag), tag, message)
 }
 
+// GetConflictedFiles mocks base method.
+func (m *MockgitOperationsAccessor) GetConflictedFiles() ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetConflictedFiles")
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetConflictedFiles indicates an expected call of GetConflictedFiles.
+func (mr *MockgitOperationsAccessorMockRecorder) GetConflictedFiles() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConflictedFiles", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetConflictedFiles))
+}
+
 // GetCurrentBranch mocks base method.
 func (m *MockgitOperationsAccessor) GetCurrentBranch() (string, error) {
 	m.ctrl.T.Helper()
@@ -235,6 +250,21 @@ func (mr *MockgitOperationsAccessorMockRecorder) GetLatestTag() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestTag", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetLatestTag))
 }
 
+// GetRepoState mocks base method.
+func (m *MockgitOperationsAccessor) GetRepoState() (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRepoState")
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRepoState indicates an expected call of GetRepoState.
+func (mr *MockgitOperationsAccessorMockRecorder) GetRepoState() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRepoState", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetRepoState))
+}
+
 // GetStagedDiff mocks base method.
 func (m *MockgitOperationsAccessor) GetStagedDiff(maxSizeBytes int) (string, error) {
 	m.ctrl.T.Helper()
@@ -248,6 +278,22 @@ func (m *MockgitOperationsAccessor) GetStagedDiff(maxSizeBytes int) (string, err
 func (mr *MockgitOperationsAccessorMockRecorder) GetStagedDiff(maxSizeBytes any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStagedDiff", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetStagedDiff), maxSizeBytes)
+}
+
+// HasConflicts mocks base method.
+func (m *MockgitOperationsAccessor) HasConflicts() (bool, []string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HasConflicts")
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].([]string)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// HasConflicts indicates an expected call of HasConflicts.
+func (mr *MockgitOperationsAccessorMockRecorder) HasConflicts() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasConflicts", reflect.TypeOf((*MockgitOperationsAccessor)(nil).HasConflicts))
 }
 
 // IncrementVersion mocks base method.

@@ -365,6 +365,18 @@ func (a *testGitOperationsAdapter) IsGitRepository() bool {
 	return a.gitOps.IsGitRepository()
 }
 
+func (a *testGitOperationsAdapter) GetRepoState() (string, error) {
+	return a.gitOps.GetRepoState()
+}
+
+func (a *testGitOperationsAdapter) HasConflicts() (bool, []string, error) {
+	return a.gitOps.HasConflicts()
+}
+
+func (a *testGitOperationsAdapter) GetConflictedFiles() ([]string, error) {
+	return a.gitOps.GetConflictedFiles()
+}
+
 func (a *testGitOperationsAdapter) UnstageAll() error {
 	return a.gitOps.UnstageAll()
 }
@@ -560,6 +572,8 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(errors.New("unstage error"))
 			},
 			wantErr:     true,
@@ -573,6 +587,8 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{}, nil)
 			},
@@ -586,6 +602,8 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("  ", nil)
@@ -600,6 +618,8 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
@@ -616,6 +636,8 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true, genErr: errors.New("ai error")},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
@@ -633,6 +655,8 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: ""},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
@@ -651,10 +675,12 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().GetCurrentBranch().Return("main", nil)
 			},
 			wantErr: false,
 		},
@@ -668,10 +694,12 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().GetCurrentBranch().Return("main", nil)
 				git.EXPECT().CreateCommit("test commit").Return(errors.New("commit error"))
 			},
 			wantErr:     true,
@@ -687,10 +715,12 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().GetCurrentBranch().Return("main", nil)
 				git.EXPECT().CreateCommit("test commit").Return(nil)
 			},
 			wantErr: false,
@@ -706,10 +736,12 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().GetCurrentBranch().Return("main", nil)
 				git.EXPECT().CreateCommit("test commit").Return(nil)
 				git.EXPECT().Push().Return("https://github.com/user/repo/pull/new", nil)
 			},
@@ -726,10 +758,12 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().GetCurrentBranch().Return("main", nil)
 				git.EXPECT().CreateCommit("test commit").Return(nil)
 				git.EXPECT().Push().Return("", errors.New("push error"))
 			},
@@ -747,10 +781,12 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().GetCurrentBranch().Return("main", nil)
 				git.EXPECT().CreateCommit("test commit").Return(nil)
 				git.EXPECT().GetLatestTag().Return("v1.0.0", nil)
 				git.EXPECT().IncrementVersion("v1.0.0", "patch").Return("v1.0.1", nil)
@@ -770,10 +806,12 @@ func TestService_Execute(t *testing.T) {
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
 				git.EXPECT().IsGitRepository().Return(true)
+				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
 				git.EXPECT().UnstageAll().Return(nil)
 				git.EXPECT().StageFiles(gomock.Any(), gomock.Any(), gomock.Any()).Return([]string{"file.go"}, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil).Times(2)
+				git.EXPECT().GetCurrentBranch().Return("main", nil)
 				git.EXPECT().CreateCommit("test commit").Return(nil)
 				git.EXPECT().Push().Return("", nil)
 				git.EXPECT().GetLatestTag().Return("v1.0.0", nil)
