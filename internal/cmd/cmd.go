@@ -103,7 +103,7 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 		"Maximum diff size in bytes to include in prompts.")
 	flags.String("jira-task-position", "none",
 		"Jira task position in commit message: prefix, infix, suffix, or none.")
-	flags.String("jira-task-style", "brackets",
+	flags.String("jira-task-style", "none",
 		"Jira task style: brackets (e.g., [TASK-123]), parens (e.g., (TASK-123)), or none (e.g., TASK-123).")
 
 	cmd.AddCommand(newVersionCommand())

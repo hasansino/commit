@@ -63,14 +63,14 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 	// Parse Jira task style
 	var jiraStyle modules.JiraTaskStyle
 	switch strings.ToLower(settings.JiraTaskStyle) {
-	case "brackets", "bracket":
+	case "brackets":
 		jiraStyle = modules.JiraTaskStyleBrackets
-	case "parens", "paren", "parentheses":
+	case "parens":
 		jiraStyle = modules.JiraTaskStyleParens
-	case "none", "plain":
+	case "none":
 		jiraStyle = modules.JiraTaskStyleNone
 	default:
-		jiraStyle = modules.JiraTaskStyleBrackets // default to brackets
+		jiraStyle = modules.JiraTaskStyleNone
 	}
 
 	svc.modules = append(svc.modules, modules.NewJIRATaskDetector(jiraPosition, jiraStyle))

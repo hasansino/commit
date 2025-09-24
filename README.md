@@ -45,7 +45,7 @@ Download the latest binary from the [releases page](https://github.com/hasansino
 
 ## Usage
 
-```bash
+```terminaloutput
 Commit helper tool
 
 Usage:
@@ -63,7 +63,7 @@ Flags:
       --first                       Use first received message and discard others
       --include-only strings        Only include specific patterns
       --jira-task-position string   Jira task position in commit message: prefix, infix, suffix, or none. (default "none")
-      --jira-task-style string      Jira task style: brackets (e.g., [TASK-123]), parens (e.g., (TASK-123)), or none (e.g., TASK-123). (default "brackets")
+      --jira-task-style string      Jira task style: brackets (e.g., [TASK-123]), parens (e.g., (TASK-123)), or none (e.g., TASK-123). (default "none")
       --log-level string            Logging level (debug, info, warn, error) (default "info")
       --max-diff-size-bytes int     Maximum diff size in bytes to include in prompts (default 262144)
       --multi-line                  Use multi-line commit messages (default true)
