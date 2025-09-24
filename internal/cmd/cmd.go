@@ -90,7 +90,7 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 		"Exclude patterns.")
 	flags.StringSlice("include-only", nil,
 		"Only include specific patterns.")
-	flags.Bool("multi-line", true,
+	flags.Bool("multi-line", false,
 		"Use multi-line commit messages.")
 	flags.Bool("push", false,
 		"Push after committing.")
