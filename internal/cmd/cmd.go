@@ -49,7 +49,8 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 				Tag:                viper.GetString("tag"),
 				UseGlobalGitignore: viper.GetBool("use-global-gitignore"),
 				MaxDiffSizeBytes:   viper.GetInt("max-diff-size-bytes"),
-				JiraTransformType:  viper.GetString("jira-transform-type"),
+				JiraTaskPosition:   viper.GetString("jira-task-position"),
+				JiraTaskStyle:      viper.GetString("jira-task-style"),
 			}
 			return runCommitCommand(f, settings)
 		},
@@ -100,8 +101,10 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 		"Use global gitignore.")
 	flags.Int("max-diff-size-bytes", 64*1024, // 64KB
 		"Maximum diff size in bytes to include in prompts.")
-	flags.String("jira-transform-type", "none",
-		"Jira commit message transformation type: prefix|suffix|none.")
+	flags.String("jira-task-position", "none",
+		"Jira task position in commit message: prefix, infix, suffix, or none.")
+	flags.String("jira-task-style", "brackets",
+		"Jira task style: brackets (e.g., [TASK-123]), parens (e.g., (TASK-123)), or none (e.g., TASK-123).")
 
 	cmd.AddCommand(newVersionCommand())
 

@@ -19,7 +19,8 @@ type Settings struct {
 	Tag                string        // Tag increment type: major, minor, or patch
 	UseGlobalGitignore bool          // Use global gitignore from git config core.excludesFile
 	MaxDiffSizeBytes   int           // Maximum diff size in bytes to consider for commit message generation
-	JiraTransformType  string        // Jira commit message transformation type: prefix/suffix/none
+	JiraTaskPosition   string        // Jira task position: prefix/infix/suffix/none
+	JiraTaskStyle      string        // Jira task style: brackets/parens/none
 }
 
 func (o *Settings) Validate() error {

@@ -35,7 +35,8 @@ func TestNewCommitService(t *testing.T) {
 				Push:               false,
 				Tag:                "",
 				UseGlobalGitignore: false,
-				JiraTransformType:  "none",
+				JiraTaskPosition:   "none",
+				JiraTaskStyle:      "brackets",
 			},
 			opts:      []Option{},
 			expectErr: false,
@@ -69,8 +70,9 @@ func TestNewCommitService(t *testing.T) {
 		{
 			name: "valid settings with jira transform",
 			settings: &Settings{
-				Timeout:           30 * time.Second,
-				JiraTransformType: "suffix",
+				Timeout:          30 * time.Second,
+				JiraTaskPosition: "suffix",
+				JiraTaskStyle:    "brackets",
 			},
 			opts:      []Option{},
 			expectErr: false,
@@ -118,9 +120,9 @@ func TestNewCommitService(t *testing.T) {
 				t.Error("NewCommitService() should initialize AI service")
 			}
 
-			if tt.settings.JiraTransformType != "" && tt.settings.JiraTransformType != "none" {
+			if tt.settings.JiraTaskPosition != "" && tt.settings.JiraTaskPosition != "none" {
 				if len(service.modules) == 0 {
-					t.Error("NewCommitService() should initialize jira module when JiraTransformType is set")
+					t.Error("NewCommitService() should initialize jira module when JiraTaskPosition is set")
 				}
 			}
 		})

@@ -47,19 +47,33 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 	svc.gitOps = git
 	svc.aiService = newAIService(svc.logger, settings.Timeout)
 
-	var (
-		jiraMsgTransformType modules.JiraTransformType
-	)
-	switch strings.ToLower(settings.JiraTransformType) {
+	// Parse Jira task position
+	var jiraPosition modules.JiraTaskPosition
+	switch strings.ToLower(settings.JiraTaskPosition) {
 	case "prefix":
-		jiraMsgTransformType = modules.JiraTransformTypePrefix
+		jiraPosition = modules.JiraTaskPositionPrefix
+	case "infix":
+		jiraPosition = modules.JiraTaskPositionInfix
 	case "suffix":
-		jiraMsgTransformType = modules.JiraTransformTypeSuffix
+		jiraPosition = modules.JiraTaskPositionSuffix
 	default:
-		jiraMsgTransformType = modules.JiraTransformTypeNone
+		jiraPosition = modules.JiraTaskPositionNone
 	}
 
-	svc.modules = append(svc.modules, modules.NewJIRATaskDetector(jiraMsgTransformType))
+	// Parse Jira task style
+	var jiraStyle modules.JiraTaskStyle
+	switch strings.ToLower(settings.JiraTaskStyle) {
+	case "brackets", "bracket":
+		jiraStyle = modules.JiraTaskStyleBrackets
+	case "parens", "paren", "parentheses":
+		jiraStyle = modules.JiraTaskStyleParens
+	case "none", "plain":
+		jiraStyle = modules.JiraTaskStyleNone
+	default:
+		jiraStyle = modules.JiraTaskStyleBrackets // default to brackets
+	}
+
+	svc.modules = append(svc.modules, modules.NewJIRATaskDetector(jiraPosition, jiraStyle))
 
 	return svc, nil
 }
