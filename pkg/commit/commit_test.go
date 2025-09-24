@@ -437,14 +437,6 @@ func (s *simpleTestAdapter) GenerateCommitMessages(
 	return map[string]string{}, nil
 }
 
-type mockProviderForTest struct{}
-
-func (m *mockProviderForTest) Name() string      { return "test" }
-func (m *mockProviderForTest) IsAvailable() bool { return true }
-func (m *mockProviderForTest) Ask(ctx context.Context, prompt string) ([]string, error) {
-	return []string{"test message"}, nil
-}
-
 // Integration test helpers for testing with actual modules
 func TestService_ModuleIntegration(t *testing.T) {
 	ctrl := gomock.NewController(t)

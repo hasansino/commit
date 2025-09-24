@@ -2,6 +2,7 @@ package commit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -153,6 +154,10 @@ func (s *Service) Execute(ctx context.Context) error {
 			},
 		)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				s.logger.WarnContext(ctx, "Interactive mode canceled by user")
+				return nil
+			}
 			s.logger.ErrorContext(ctx, "Failed to enter interactive mode", "error", err)
 			return fmt.Errorf("failed to run interactive ui: %w", err)
 		}

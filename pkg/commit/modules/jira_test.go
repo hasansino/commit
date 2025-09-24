@@ -407,32 +407,32 @@ func TestTransformPrompt(t *testing.T) {
 	module := NewJIRATaskDetector(JiraTransformTypeSuffix)
 
 	tests := []struct {
-		name           string
-		prompt         string
-		expectedPrompt string
+		name            string
+		prompt          string
+		expectedPrompt  string
 		expectedChanged bool
-		expectedError  bool
+		expectedError   bool
 	}{
 		{
-			name:           "should not modify prompt",
-			prompt:         "Generate a commit message for this change",
-			expectedPrompt: "Generate a commit message for this change",
+			name:            "should not modify prompt",
+			prompt:          "Generate a commit message for this change",
+			expectedPrompt:  "Generate a commit message for this change",
 			expectedChanged: false,
-			expectedError:  false,
+			expectedError:   false,
 		},
 		{
-			name:           "empty prompt",
-			prompt:         "",
-			expectedPrompt: "",
+			name:            "empty prompt",
+			prompt:          "",
+			expectedPrompt:  "",
 			expectedChanged: false,
-			expectedError:  false,
+			expectedError:   false,
 		},
 		{
-			name:           "prompt with special characters",
-			prompt:         "Generate message for PROJ-123 changes",
-			expectedPrompt: "Generate message for PROJ-123 changes",
+			name:            "prompt with special characters",
+			prompt:          "Generate message for PROJ-123 changes",
+			expectedPrompt:  "Generate message for PROJ-123 changes",
 			expectedChanged: false,
-			expectedError:  false,
+			expectedError:   false,
 		},
 	}
 
