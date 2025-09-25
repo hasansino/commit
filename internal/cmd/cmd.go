@@ -84,13 +84,13 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	flags.Bool("first", false,
 		"Use first received message and discard others.")
 	flags.Bool("auto", false,
-		"Auto-commit with first suggestion.")
+		"Auto-commit with first and fastest response from provider.")
 	flags.Bool("dry-run", false,
 		"Show what would be committed without committing.")
 	flags.StringSlice("exclude", nil,
-		"Exclude patterns.")
+		"Exclude patterns, when staging changes.")
 	flags.StringSlice("include-only", nil,
-		"Only include specific patterns.")
+		"Only include specific patterns, when staging changes.")
 	flags.Bool("multi-line", false,
 		"Use multi-line commit messages.")
 	flags.Bool("push", false,

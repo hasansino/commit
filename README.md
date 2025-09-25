@@ -30,12 +30,16 @@ Download the latest binary from the [releases page](https://github.com/hasansino
 
 ## Features
 
-- Generates commit messages using multiple providers
-- Supports multi-line commit messages
-- Exclude/include specific file patterns
-- Supports semantic versioning tag (major, minor, patch) incrementation
-- Option to push changes after committing to relevant remote branch
 - Dry-run mode
+- Generates messages according to conventional commits specification
+- Generates commit messages using multiple providers (claude, openai, gemini)
+- Supports multi-line commit messages
+- Exclude/include specific file patterns and use global gitignore
+- Customizable commit message prompt templates
+- Option to use first or fastest response from providers
+- Configurable maximum diff size to include in prompts
+- Supports semantic versioning tag (major, minor, patch) incrementation and push
+- Option to push changes after committing to relevant remote branch
 - GPG signing according to user git configuration, supporting password input
 - Detects JIRA issue keys in branch name and adds them to commit message
 
@@ -57,22 +61,23 @@ Available Commands:
   version     Version information
 
 Flags:
-      --auto                        Auto-commit with first suggestion
-      --dry-run                     Show what would be committed without committing
-      --exclude strings             Exclude patterns
-      --first                       Use first received message and discard others
-      --include-only strings        Only include specific patterns
+      --auto                        Auto-commit with first and fastest response from provider.
+      --dry-run                     Show what would be committed without committing.
+      --exclude strings             Exclude patterns, when staging changes.
+      --first                       Use first received message and discard others.
+  -h, --help                        help for commit
+      --include-only strings        Only include specific patterns, when staging changes.
       --jira-task-position string   Jira task position in commit message: prefix, infix, suffix, or none. (default "none")
       --jira-task-style string      Jira task style: brackets (e.g., [TASK-123]), parens (e.g., (TASK-123)), or none (e.g., TASK-123). (default "none")
       --log-level string            Logging level (debug, info, warn, error) (default "info")
-      --max-diff-size-bytes int     Maximum diff size in bytes to include in prompts (default 262144)
-      --multi-line                  Use multi-line commit messages (default true)
-      --prompt string               Custom prompt template
-      --providers strings           Providers to use, leave empty to for all (claude|openai|gemini)
-      --push                        Push after committing
-      --tag string                  Create and increment semver tag part (major|minor|patch)
-      --timeout duration            API timeout (default 10s)
-      --use-global-gitignore        Use global gitignore (default true)
+      --max-diff-size-bytes int     Maximum diff size in bytes to include in prompts. (default 65536)
+      --multi-line                  Use multi-line commit messages.
+      --prompt string               Custom prompt template.
+      --providers strings           Providers to use, leave empty for all (claude|openai|gemini).
+      --push                        Push after committing.
+      --tag string                  Create and increment semver tag part (major|minor|patch).
+      --timeout duration            API timeout. (default 10s)
+      --use-global-gitignore        Use global gitignore. (default true)
 
 Use "commit [command] --help" for more information about a command.
 ```
@@ -89,3 +94,9 @@ At least one *_API_KEY variable is required to use this tool.
 - OPENAI_MODEL (optional, defaults to "gpt-4-turbo")
 - GEMINI_API_KEY
 - GEMINI_MODEL (optional, defaults to "gemini-1.5-flash")
+
+## Custom Prompt Variables
+
+- {diff}: git diff of the changes to be committed
+- {files}: list of changed files
+- {branch}: current git branch name
