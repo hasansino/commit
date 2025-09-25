@@ -50,11 +50,11 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 	// Parse Jira task position
 	var jiraPosition modules.JiraTaskPosition
 	switch strings.ToLower(settings.JiraTaskPosition) {
-	case "prefix":
+	case string(modules.JiraTaskPositionPrefix):
 		jiraPosition = modules.JiraTaskPositionPrefix
-	case "infix":
+	case string(modules.JiraTaskPositionInfix):
 		jiraPosition = modules.JiraTaskPositionInfix
-	case "suffix":
+	case string(modules.JiraTaskPositionSuffix):
 		jiraPosition = modules.JiraTaskPositionSuffix
 	default:
 		jiraPosition = modules.JiraTaskPositionNone
@@ -63,12 +63,10 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 	// Parse Jira task style
 	var jiraStyle modules.JiraTaskStyle
 	switch strings.ToLower(settings.JiraTaskStyle) {
-	case "brackets":
+	case string(modules.JiraTaskStyleBrackets):
 		jiraStyle = modules.JiraTaskStyleBrackets
-	case "parens":
+	case string(modules.JiraTaskStyleParens):
 		jiraStyle = modules.JiraTaskStyleParens
-	case "none":
-		jiraStyle = modules.JiraTaskStyleNone
 	default:
 		jiraStyle = modules.JiraTaskStyleNone
 	}
