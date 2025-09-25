@@ -31,7 +31,6 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 		Short: "Commit helper tool",
 		Long:  `Commit helper tool`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			initLogging(f.Options().LogLevel)
 			return viper.BindPFlags(cmd.Flags())
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -52,6 +51,7 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 				JiraTaskPosition:   viper.GetString("jira-task-position"),
 				JiraTaskStyle:      viper.GetString("jira-task-style"),
 			}
+			initLogging(f.Options().LogLevel)
 			return runCommitCommand(f, settings)
 		},
 		SilenceUsage:  true,
@@ -99,12 +99,13 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 		"Create and increment semver tag part (major|minor|patch).")
 	flags.Bool("use-global-gitignore", true,
 		"Use global gitignore.")
-	flags.Int("max-diff-size-bytes", 64*1024, // 64KB
+	flags.Int("max-diff-size-bytes", 64*1024,
 		"Maximum diff size in bytes to include in prompts.")
 	flags.String("jira-task-position", "none",
 		"Jira task position in commit message: prefix, infix, suffix, or none.")
-	flags.String("jira-task-style", "none",
-		"Jira task style: brackets (e.g., [TASK-123]), parens (e.g., (TASK-123)), or none (e.g., TASK-123).")
+	flags.String(
+		"jira-task-style", "none", "Jira task style: brackets, parens , plain-colon, or plain.",
+	)
 
 	cmd.AddCommand(newVersionCommand())
 

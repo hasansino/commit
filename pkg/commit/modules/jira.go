@@ -19,9 +19,10 @@ const (
 )
 
 const (
-	JiraTaskStyleNone     JiraTaskStyle = "none"
-	JiraTaskStyleBrackets JiraTaskStyle = "brackets" // [TASK-000]
-	JiraTaskStyleParens   JiraTaskStyle = "parens"   // (TASK-000)
+	JiraTaskStylePlain      JiraTaskStyle = "plain"       // TASK-000
+	JiraTaskStylePlainColon JiraTaskStyle = "plain_colon" // TASK-000:
+	JiraTaskStyleBrackets   JiraTaskStyle = "brackets"    // [TASK-000]
+	JiraTaskStyleParens     JiraTaskStyle = "parens"      // (TASK-000)
 )
 
 var jiraPatterns = []*regexp.Regexp{
@@ -137,6 +138,12 @@ func (j *JIRATaskDetector) addJiraID(commitMessage, jiraID string) string {
 		formattedID = "[" + jiraID + "]"
 	case JiraTaskStyleParens:
 		formattedID = "(" + jiraID + ")"
+	case JiraTaskStylePlainColon:
+		if j.position == JiraTaskPositionPrefix {
+			formattedID = jiraID + ":"
+		} else {
+			formattedID = jiraID
+		}
 	default:
 		formattedID = jiraID
 	}

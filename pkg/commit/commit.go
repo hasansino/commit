@@ -67,8 +67,10 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 		jiraStyle = modules.JiraTaskStyleBrackets
 	case string(modules.JiraTaskStyleParens):
 		jiraStyle = modules.JiraTaskStyleParens
+	case string(modules.JiraTaskStylePlainColon):
+		jiraStyle = modules.JiraTaskStylePlainColon
 	default:
-		jiraStyle = modules.JiraTaskStyleNone
+		jiraStyle = modules.JiraTaskStylePlain
 	}
 
 	svc.modules = append(svc.modules, modules.NewJIRATaskDetector(jiraPosition, jiraStyle))

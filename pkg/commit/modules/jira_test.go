@@ -308,7 +308,7 @@ func TestJiraCornerCases(t *testing.T) {
 		{
 			name:          "plain style with brackets in message",
 			position:      JiraTaskPositionPrefix,
-			style:         JiraTaskStyleNone,
+			style:         JiraTaskStylePlain,
 			branch:        "feature/TASK-500-feature",
 			commitMessage: "Fix [important] issue",
 			expected:      "TASK-500 Fix [important] issue",
@@ -317,7 +317,7 @@ func TestJiraCornerCases(t *testing.T) {
 		{
 			name:          "plain style with existing formatted ID",
 			position:      JiraTaskPositionPrefix,
-			style:         JiraTaskStyleNone,
+			style:         JiraTaskStylePlain,
 			branch:        "feature/TASK-501-feature",
 			commitMessage: "[TASK-501] Already formatted",
 			expected:      "[TASK-501] Already formatted",
@@ -528,7 +528,7 @@ func TestJiraTaskDetectorBasicAPI(t *testing.T) {
 		{
 			name:          "plain prefix",
 			position:      JiraTaskPositionPrefix,
-			style:         JiraTaskStyleNone,
+			style:         JiraTaskStylePlain,
 			branch:        "feature/TASK-789-new-feature",
 			commitMessage: "feat(api): implement endpoint",
 			expected:      "TASK-789 feat(api): implement endpoint",
@@ -537,7 +537,7 @@ func TestJiraTaskDetectorBasicAPI(t *testing.T) {
 		{
 			name:          "plain infix",
 			position:      JiraTaskPositionInfix,
-			style:         JiraTaskStyleNone,
+			style:         JiraTaskStylePlain,
 			branch:        "feature/TASK-789-new-feature",
 			commitMessage: "feat(api): implement endpoint",
 			expected:      "feat(api): TASK-789 implement endpoint",
@@ -546,7 +546,7 @@ func TestJiraTaskDetectorBasicAPI(t *testing.T) {
 		{
 			name:          "plain suffix",
 			position:      JiraTaskPositionSuffix,
-			style:         JiraTaskStyleNone,
+			style:         JiraTaskStylePlain,
 			branch:        "feature/TASK-789-new-feature",
 			commitMessage: "feat(api): implement endpoint",
 			expected:      "feat(api): implement endpoint TASK-789",
@@ -641,9 +641,14 @@ func TestJiraPositionStyleCombinations(t *testing.T) {
 		{JiraTaskPositionSuffix, JiraTaskStyleParens, "fix: resolve issue (TEST-999)"},
 
 		// All plain combinations
-		{JiraTaskPositionPrefix, JiraTaskStyleNone, "TEST-999 fix: resolve issue"},
-		{JiraTaskPositionInfix, JiraTaskStyleNone, "fix: TEST-999 resolve issue"},
-		{JiraTaskPositionSuffix, JiraTaskStyleNone, "fix: resolve issue TEST-999"},
+		{JiraTaskPositionPrefix, JiraTaskStylePlain, "TEST-999 fix: resolve issue"},
+		{JiraTaskPositionInfix, JiraTaskStylePlain, "fix: TEST-999 resolve issue"},
+		{JiraTaskPositionSuffix, JiraTaskStylePlain, "fix: resolve issue TEST-999"},
+
+		// All plain-colon  combinations
+		{JiraTaskPositionPrefix, JiraTaskStylePlainColon, "TEST-999: fix: resolve issue"},
+		{JiraTaskPositionInfix, JiraTaskStylePlainColon, "fix: TEST-999 resolve issue"},
+		{JiraTaskPositionSuffix, JiraTaskStylePlainColon, "fix: resolve issue TEST-999"},
 	}
 
 	ctx := context.Background()
