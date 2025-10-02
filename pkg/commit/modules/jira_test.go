@@ -598,6 +598,15 @@ func TestJiraTaskDetectorBasicAPI(t *testing.T) {
 			expected:      "fix: resolve issue (BUG-222)\n\nDetailed description",
 			shouldChange:  true,
 		},
+		{
+			name:          "plain-colon prefix",
+			position:      JiraTaskPositionPrefix,
+			style:         JiraTaskStylePlainColon,
+			branch:        "TASK-2224_some_branch_name",
+			commitMessage: "feat(api): add new endpoint",
+			expected:      "TASK-2224: feat(api): add new endpoint",
+			shouldChange:  true,
+		},
 	}
 
 	ctx := context.Background()

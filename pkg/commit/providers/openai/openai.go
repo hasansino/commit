@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/openai/openai-go/v2"
 	"github.com/openai/openai-go/v2/option"
@@ -82,11 +81,7 @@ func (p *OpenAI) Ask(ctx context.Context, prompt string) ([]string, error) {
 		return nil, fmt.Errorf("no content received")
 	}
 
-	text := strings.TrimSpace(candidate.Message.Content)
-	text = strings.Trim(text, "```") // nolint
-	text = strings.Trim(text, "\n")
-
-	return []string{text}, nil
+	return []string{candidate.Message.Content}, nil
 }
 
 func validFinishReason(reason string) bool {

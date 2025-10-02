@@ -132,7 +132,7 @@ func (s *aiService) GenerateCommitMessages(
 
 			resultChan <- providerResponse{
 				Name:    provider.Name(),
-				Message: messages[0],
+				Message: s.cleanupMessage(messages[0]),
 			}
 		}(commonCtx, provider)
 	}
@@ -155,7 +155,25 @@ func (s *aiService) GenerateCommitMessages(
 	for result := range resultChan {
 		results[result.Name] = result.Message
 	}
+
 	return results, nil
+}
+
+func (s *aiService) cleanupMessage(message string) string {
+	const fence = "```"
+
+	start := strings.Index(message, fence)
+	end := strings.LastIndex(message, fence)
+
+	if start != -1 && end != -1 && end > start {
+		start += len(fence)
+		message = message[start:end]
+	}
+
+	message = strings.Trim(message, "\n")
+	message = strings.TrimSpace(message)
+
+	return message
 }
 
 func (s *aiService) buildPrompt(diff, branch string, files []string, multiLine bool) string {

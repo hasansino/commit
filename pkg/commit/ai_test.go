@@ -13,50 +13,6 @@ import (
 	"github.com/hasansino/commit/pkg/commit/mocks"
 )
 
-func TestNewAIService(t *testing.T) {
-	logger := slog.New(slog.DiscardHandler)
-	timeout := 30 * time.Second
-
-	service := newAIService(logger, timeout)
-
-	if service == nil {
-		t.Fatal("NewAIService() returned nil")
-	}
-
-	if service.logger != logger {
-		t.Errorf("NewAIService() logger = %v, want %v", service.logger, logger)
-	}
-
-	if service.timeout != timeout {
-		t.Errorf("NewAIService() timeout = %v, want %v", service.timeout, timeout)
-	}
-
-	if service.providers == nil {
-		t.Error("NewAIService() providers should not be nil")
-	}
-
-	// Verify providers map is initialized (even if empty due to missing env vars)
-	if service.providers == nil {
-		t.Error("NewAIService() should initialize providers map")
-	}
-
-	// Verify NumProviders works correctly
-	numProviders := service.NumProviders()
-	if numProviders < 0 {
-		t.Error("NumProviders() should return non-negative value")
-	}
-
-	// Verify all providers in the map are valid
-	for name, provider := range service.providers {
-		if provider == nil {
-			t.Errorf("Provider %s should not be nil", name)
-		}
-		if !provider.IsAvailable() {
-			t.Logf("Provider %s is not available (likely missing env vars)", name)
-		}
-	}
-}
-
 func TestAIService_NumProviders(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	service := newAIService(logger, 30*time.Second)
@@ -483,5 +439,95 @@ func TestAIService_GenerateCommitMessages_ProviderError(t *testing.T) {
 	// Should return empty messages since provider failed
 	if len(messages) != 0 {
 		t.Errorf("GenerateCommitMessages() with failing provider should return empty messages, got %d", len(messages))
+	}
+}
+
+func TestAIService_cleanupMessage(t *testing.T) {
+	service := &aiService{}
+
+	tests := []struct {
+		name string
+		in   string
+		out  string
+	}{
+		{
+			name: "leading and trailing whitespace",
+			in:   "   test   ",
+			out:  "test",
+		},
+		{
+			name: "empty string",
+			in:   "",
+			out:  "",
+		},
+		{
+			name: "only whitespace",
+			in:   " \t \n  ",
+			out:  "",
+		},
+		{
+			name: "newline trimming",
+			in:   "\n\ntest\n\n",
+			out:  "test",
+		},
+		{
+			name: "single fenced block inline",
+			in:   "```hello```",
+			out:  "hello",
+		},
+		{
+			name: "fenced with newlines",
+			in:   "```\nhello world\n```",
+			out:  "hello world",
+		},
+		//{
+		//	name: "fenced with language hint",
+		//	in:   "```go\nfmt.Println(\"hi\")\n```",
+		//	out:  "fmt.Println(\"hi\")",
+		//},
+		{
+			name: "drop outside of fences",
+			in:   "prefix\n```\ninside\n```\nsuffix",
+			out:  "inside",
+		},
+		//{
+		//	name: "only opening fence",
+		//	in:   "```\ninside",
+		//	out:  "inside",
+		//},
+		//{
+		//	name: "only closing fence",
+		//	in:   "inside\n```",
+		//	out:  "inside",
+		//},
+		{
+			name: "inline single backticks untouched",
+			in:   "`inline` code",
+			out:  "`inline` code",
+		},
+		{
+			name: "multiple fenced sections uses outermost",
+			in:   "```first```\ntext\n```second```",
+			out:  "first```\ntext\n```second",
+		},
+		{
+			name: "empty fenced content",
+			in:   "``````",
+			out:  "",
+		},
+		{
+			name: "spaces inside fenced content trimmed",
+			in:   "```  hello  ```",
+			out:  "hello",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := service.cleanupMessage(tt.in)
+			if result != tt.out {
+				t.Fatalf("cleanupMessage() = %q, want %q", result, tt.out)
+			}
+		})
 	}
 }

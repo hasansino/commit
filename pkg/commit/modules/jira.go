@@ -20,7 +20,7 @@ const (
 
 const (
 	JiraTaskStylePlain      JiraTaskStyle = "plain"       // TASK-000
-	JiraTaskStylePlainColon JiraTaskStyle = "plain_colon" // TASK-000:
+	JiraTaskStylePlainColon JiraTaskStyle = "plain-colon" // TASK-000:
 	JiraTaskStyleBrackets   JiraTaskStyle = "brackets"    // [TASK-000]
 	JiraTaskStyleParens     JiraTaskStyle = "parens"      // (TASK-000)
 )
