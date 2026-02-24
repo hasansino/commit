@@ -145,7 +145,8 @@ func TestGitOperations_IncrementVersion(t *testing.T) {
 					t.Errorf("IncrementVersion(%q, %q) unexpected error = %v", tt.currentTag, tt.incrementType, err)
 				}
 				if result != tt.expected {
-					t.Errorf("IncrementVersion(%q, %q) = %q, want %q", tt.currentTag, tt.incrementType, result, tt.expected)
+					t.Errorf(
+						"IncrementVersion(%q, %q) = %q, want %q", tt.currentTag, tt.incrementType, result, tt.expected)
 				}
 			}
 		})
