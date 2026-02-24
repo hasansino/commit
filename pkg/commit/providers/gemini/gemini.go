@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	defaultModel     = "gemini-2.5-flash-lite"
+	defaultModel     = "gemini-3-flash-preview"
 	defaultMaxTokens = 4096
 )
 

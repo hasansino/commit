@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	defaultModel     = "claude-3-5-haiku-latest"
+	defaultModel     = "claude-haiku-4-5"
 	defaultMaxTokens = 4096
 )
 
