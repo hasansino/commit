@@ -12,6 +12,7 @@ package mocks
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	gomock "go.uber.org/mock/gomock"
 )
@@ -81,6 +82,18 @@ func (m *MockproviderAccessor) Name() string {
 func (mr *MockproviderAccessorMockRecorder) Name() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockproviderAccessor)(nil).Name))
+}
+
+// SetTimeout mocks base method.
+func (m *MockproviderAccessor) SetTimeout(timeout time.Duration) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetTimeout", timeout)
+}
+
+// SetTimeout indicates an expected call of SetTimeout.
+func (mr *MockproviderAccessorMockRecorder) SetTimeout(timeout any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTimeout", reflect.TypeOf((*MockproviderAccessor)(nil).SetTimeout), timeout)
 }
 
 // MockmoduleAccessor is a mock of moduleAccessor interface.

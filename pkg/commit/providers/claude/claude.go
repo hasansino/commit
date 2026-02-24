@@ -3,7 +3,9 @@ package claude
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -12,18 +14,21 @@ import (
 const (
 	defaultModel     = "claude-haiku-4-5"
 	defaultMaxTokens = 4096
+	defaultTimeout   = 30 * time.Second
 )
 
 type Claude struct {
-	apiKey string
-	model  string
-	client *anthropic.Client
+	apiKey  string
+	model   string
+	client  *anthropic.Client
+	timeout time.Duration
 }
 
 func NewClaude() *Claude {
 	return &Claude{
-		apiKey: os.Getenv("ANTHROPIC_API_KEY"),
-		model:  os.Getenv("ANTHROPIC_MODEL"),
+		apiKey:  os.Getenv("ANTHROPIC_API_KEY"),
+		model:   os.Getenv("ANTHROPIC_MODEL"),
+		timeout: defaultTimeout,
 	}
 }
 
@@ -35,14 +40,24 @@ func (p *Claude) IsAvailable() bool {
 	return p.apiKey != ""
 }
 
+func (p *Claude) SetTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		p.timeout = timeout
+	}
+}
+
 func (p *Claude) Ask(ctx context.Context, prompt string) ([]string, error) {
 	if !p.IsAvailable() {
 		return nil, fmt.Errorf("api key not found")
 	}
 
 	if p.client == nil {
+		httpClient := &http.Client{
+			Timeout: p.timeout,
+		}
 		client := anthropic.NewClient(
 			option.WithAPIKey(p.apiKey),
+			option.WithHTTPClient(httpClient),
 		)
 		p.client = &client
 	}

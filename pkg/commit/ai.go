@@ -35,12 +35,15 @@ func newAIService(logger *slog.Logger, timeout time.Duration) *aiService {
 	providerList := make(map[string]providerAccessor)
 
 	if openaiProvider := openai.NewOpenAI(); openaiProvider.IsAvailable() {
+		openaiProvider.SetTimeout(timeout)
 		providerList[openaiProvider.Name()] = openaiProvider
 	}
 	if claudeProvider := claude.NewClaude(); claudeProvider.IsAvailable() {
+		claudeProvider.SetTimeout(timeout)
 		providerList[claudeProvider.Name()] = claudeProvider
 	}
 	if geminiProvider := gemini.NewGemini(); geminiProvider.IsAvailable() {
+		geminiProvider.SetTimeout(timeout)
 		providerList[geminiProvider.Name()] = geminiProvider
 	}
 

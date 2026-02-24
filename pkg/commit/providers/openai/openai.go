@@ -3,7 +3,9 @@ package openai
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/openai/openai-go/v2"
 	"github.com/openai/openai-go/v2/option"
@@ -13,18 +15,21 @@ import (
 const (
 	defaultModel     = shared.ChatModelGPT4Turbo
 	defaultMaxTokens = 4096
+	defaultTimeout   = 30 * time.Second
 )
 
 type OpenAI struct {
-	apiKey string
-	model  string
-	client *openai.Client
+	apiKey  string
+	model   string
+	client  *openai.Client
+	timeout time.Duration
 }
 
 func NewOpenAI() *OpenAI {
 	return &OpenAI{
-		apiKey: os.Getenv("OPENAI_API_KEY"),
-		model:  os.Getenv("OPENAI_MODEL"),
+		apiKey:  os.Getenv("OPENAI_API_KEY"),
+		model:   os.Getenv("OPENAI_MODEL"),
+		timeout: defaultTimeout,
 	}
 }
 
@@ -36,14 +41,24 @@ func (p *OpenAI) IsAvailable() bool {
 	return p.apiKey != ""
 }
 
+func (p *OpenAI) SetTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		p.timeout = timeout
+	}
+}
+
 func (p *OpenAI) Ask(ctx context.Context, prompt string) ([]string, error) {
 	if !p.IsAvailable() {
 		return nil, fmt.Errorf("openai api key not found")
 	}
 
 	if p.client == nil {
+		httpClient := &http.Client{
+			Timeout: p.timeout,
+		}
 		client := openai.NewClient(
 			option.WithAPIKey(p.apiKey),
+			option.WithHTTPClient(httpClient),
 		)
 		p.client = &client
 	}

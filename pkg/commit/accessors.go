@@ -1,6 +1,9 @@
 package commit
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 //go:generate mockgen -source $GOFILE -package mocks -destination mocks/mocks.go
 
@@ -8,6 +11,7 @@ type providerAccessor interface {
 	Name() string
 	IsAvailable() bool
 	Ask(ctx context.Context, prompt string) ([]string, error)
+	SetTimeout(timeout time.Duration)
 }
 
 type moduleAccessor interface {

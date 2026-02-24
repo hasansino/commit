@@ -3,7 +3,9 @@ package gemini
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"time"
 
 	"google.golang.org/genai"
 )
@@ -11,18 +13,21 @@ import (
 const (
 	defaultModel     = "gemini-3-flash-preview"
 	defaultMaxTokens = 4096
+	defaultTimeout   = 30 * time.Second
 )
 
 type Gemini struct {
-	apiKey string
-	model  string
-	client *genai.Client
+	apiKey  string
+	model   string
+	client  *genai.Client
+	timeout time.Duration
 }
 
 func NewGemini() *Gemini {
 	return &Gemini{
-		apiKey: os.Getenv("GEMINI_API_KEY"),
-		model:  os.Getenv("GEMINI_MODEL"),
+		apiKey:  os.Getenv("GEMINI_API_KEY"),
+		model:   os.Getenv("GEMINI_MODEL"),
+		timeout: defaultTimeout,
 	}
 }
 
@@ -34,14 +39,24 @@ func (p *Gemini) IsAvailable() bool {
 	return p.apiKey != ""
 }
 
+func (p *Gemini) SetTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		p.timeout = timeout
+	}
+}
+
 func (p *Gemini) Ask(ctx context.Context, prompt string) ([]string, error) {
 	if !p.IsAvailable() {
 		return nil, fmt.Errorf("api key not found")
 	}
 
 	if p.client == nil {
+		httpClient := &http.Client{
+			Timeout: p.timeout,
+		}
 		client, err := genai.NewClient(ctx, &genai.ClientConfig{
-			APIKey: p.apiKey,
+			APIKey:     p.apiKey,
+			HTTPClient: httpClient,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create genai client: %w", err)
