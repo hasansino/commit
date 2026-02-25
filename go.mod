@@ -1,6 +1,6 @@
 module github.com/hasansino/commit
 
-go 1.24.0
+go 1.24.13
 
 toolchain go1.25.5
 
