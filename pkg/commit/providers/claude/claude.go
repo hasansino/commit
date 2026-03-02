@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	defaultModel     = "claude-haiku-4-5"
+	defaultModel     = string(anthropic.ModelClaudeHaiku4_5)
 	defaultMaxTokens = 4096
-	defaultTimeout   = 30 * time.Second
+	defaultTimeout   = 10 * time.Second
 )
 
 type Claude struct {

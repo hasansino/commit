@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	defaultModel     = "gemini-3-flash-preview"
+	defaultModel     = "gemini-2.5-flash-lite"
 	defaultMaxTokens = 4096
-	defaultTimeout   = 30 * time.Second
+	defaultTimeout   = 10 * time.Second
 )
 
 type Gemini struct {

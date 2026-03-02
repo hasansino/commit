@@ -7,15 +7,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/openai/openai-go/v2"
-	"github.com/openai/openai-go/v2/option"
-	"github.com/openai/openai-go/v2/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 const (
-	defaultModel     = shared.ChatModelGPT4Turbo
+	defaultModel     = shared.ChatModelGPT4oMini
 	defaultMaxTokens = 4096
-	defaultTimeout   = 30 * time.Second
+	defaultTimeout   = 10 * time.Second
 )
 
 type OpenAI struct {
