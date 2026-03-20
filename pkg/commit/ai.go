@@ -93,6 +93,8 @@ func (s *aiService) GenerateCommitMessages(
 	type providerResponse struct {
 		Name    string
 		Message string
+		Time    time.Duration
+		Err     error
 	}
 
 	commonCtx, commonCtxCancel := context.WithCancel(ctx)
@@ -113,6 +115,8 @@ func (s *aiService) GenerateCommitMessages(
 			ctx, cancel := context.WithTimeout(ctx, s.timeout)
 			defer cancel()
 
+			now := time.Now()
+
 			messages, err := provider.Ask(ctx, prompt)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
@@ -122,6 +126,11 @@ func (s *aiService) GenerateCommitMessages(
 						"error", err.Error(),
 					)
 				}
+				resultChan <- providerResponse{
+					Name: provider.Name(),
+					Err:  err,
+					Time: time.Since(now),
+				}
 				return
 			}
 
@@ -130,6 +139,11 @@ func (s *aiService) GenerateCommitMessages(
 					ctx, "No messages received from provider",
 					"provider", provider.Name(),
 				)
+				resultChan <- providerResponse{
+					Name: provider.Name(),
+					Err:  errors.New("no messages received from provider"),
+					Time: time.Since(now),
+				}
 				return
 			}
 
@@ -156,7 +170,20 @@ func (s *aiService) GenerateCommitMessages(
 	commonCtxCancel()
 	close(resultChan)
 	for result := range resultChan {
-		results[result.Name] = result.Message
+		if result.Err != nil {
+			s.logger.ErrorContext(
+				ctx, "Failed to get message from provider",
+				"provider", result.Name,
+				"error", result.Err.Error(),
+			)
+		} else {
+			results[result.Name] = result.Message
+		}
+		s.logger.DebugContext(
+			ctx, "Received response from provider",
+			"provider", result.Name,
+			"time", result.Time.String(),
+		)
 	}
 
 	return results, nil
