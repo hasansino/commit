@@ -74,7 +74,7 @@ FROM alpine:3.23
 # Check for versions @ https://pkgs.alpinelinux.org/packages?branch=v3.22
 # When updating image version, make sure to re-check package availability and versions
 # for that specific alpine version you are updating to.
-RUN apk add --no-cache ca-certificates=20251003-r0 tzdata=2025c-r0
+RUN apk add --no-cache ca-certificates=20251003-r0 tzdata=2026a-r0
 
 # We are running service as non-root user.
 RUN addgroup -g 1000 appuser && \
