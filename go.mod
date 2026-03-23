@@ -1,6 +1,6 @@
 module github.com/hasansino/commit
 
-go 1.24.13
+go 1.24.1
 
 toolchain go1.25.5
 
@@ -12,7 +12,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/go-git/go-git/v5 v5.16.2
 	github.com/lmittmann/tint v1.1.2
-	github.com/openai/openai-go/v2 v2.7.1
+	github.com/openai/openai-go/v3 v3.24.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
@@ -56,7 +56,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
-	github.com/openai/openai-go/v3 v3.24.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
