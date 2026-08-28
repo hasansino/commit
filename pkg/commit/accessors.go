@@ -20,23 +20,6 @@ type moduleAccessor interface {
 	TransformCommitMessage(ctx context.Context, branch, message string) (string, bool, error)
 }
 
-type gitOperationsAccessor interface {
-	IsGitRepository() bool
-	GetRepoState() (string, error)
-	HasConflicts() (bool, []string, error)
-	GetConflictedFiles() ([]string, error)
-	UnstageAll() error
-	StageFiles(excludePatterns, includePatterns []string, useGlobalGitignore bool) ([]string, error)
-	GetStagedDiff(maxSizeBytes int) (string, error)
-	GetCurrentBranch() (string, error)
-	CreateCommit(message string) error
-	Push() (string, error)
-	GetLatestTag() (string, error)
-	IncrementVersion(currentTag, incrementType string) (string, error)
-	CreateTag(tag, message string) error
-	PushTag(tag string) error
-}
-
 type aiServiceAccessor interface {
 	NumProviders() int
 	GenerateCommitMessages(

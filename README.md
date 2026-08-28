@@ -1,7 +1,6 @@
 <p align="center">
 <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="licence"></a>
-<a href="https://golang.org/"><img src="https://img.shields.io/badge/Go-1.24.13-00ADD8?style=flat&logo=go" alt="goversion"></a>
-<a href="https://goreportcard.com/report/github.com/hasansino/commit"><img src="https://goreportcard.com/badge/github.com/hasansino/commit" alt="goreport"></a>
+<a href="https://golang.org/"><img src="https://img.shields.io/badge/Go-1.27-00ADD8?style=flat&logo=go" alt="goversion"></a>
 <a href="https://github.com/hasansino/commit/releases"><img src="https://img.shields.io/github/v/release/hasansino/commit" alt="release"></a>
 </p>
 
@@ -83,6 +82,11 @@ Use "commit [command] --help" for more information about a command.
 ```
 
 All flags can also be set via environment variables, e.g. `COMMIT_AUTO=true`.
+
+If changes are already staged, `commit` uses that exact staged set and does not apply
+`--include-only`, `--exclude`, or global-gitignore filtering. When nothing is staged,
+the tool stages matching changes temporarily and restores the original index after a
+dry run, cancellation, or failure before commit creation.
 
 ## Configuration
 

@@ -78,7 +78,7 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 	return svc, nil
 }
 
-func (s *Service) Execute(ctx context.Context) error {
+func (s *Service) Execute(ctx context.Context) (retErr error) {
 	if s.aiService.NumProviders() == 0 {
 		s.logger.WarnContext(ctx, "No providers configured")
 		return fmt.Errorf("no api keys found in environment")
@@ -110,23 +110,40 @@ func (s *Service) Execute(ctx context.Context) error {
 		return fmt.Errorf("unresolved conflicts detected")
 	}
 
-	s.logger.DebugContext(ctx, "Unstaging all files...")
+	s.logger.DebugContext(ctx, "Preparing staged files...")
 
-	if err := s.gitOps.UnstageAll(); err != nil {
-		s.logger.ErrorContext(ctx, "Failed to unstage files", "error", err)
-		return fmt.Errorf("failed to unstage files: %w", err)
-	}
-
-	s.logger.DebugContext(ctx, "Staging files...")
-
-	stagedFiles, err := s.gitOps.StageFiles(
+	staging, err := s.gitOps.BeginStaging(
 		s.settings.ExcludePatterns,
 		s.settings.IncludePatterns,
 		s.settings.UseGlobalGitignore,
 	)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "Failed to stage files", "error", err)
-		return fmt.Errorf("failed to stage files: %w", err)
+		s.logger.ErrorContext(ctx, "Failed to prepare staged files", "error", err)
+		return fmt.Errorf("failed to prepare staged files: %w", err)
+	}
+	if staging == nil {
+		return fmt.Errorf("failed to prepare staged files: staging session is nil")
+	}
+	stagedFiles := staging.files
+
+	defer func() {
+		if err := s.gitOps.FinishStaging(staging); err != nil {
+			finishErr := fmt.Errorf(
+				"failed to finalize staging: %w; temporary staged changes may remain; inspect them with git diff --cached",
+				err,
+			)
+			s.logger.ErrorContext(ctx, "Failed to finalize staging", "error", err)
+			retErr = errors.Join(retErr, finishErr)
+		}
+	}()
+
+	if staging.usesExistingStaging() &&
+		(len(s.settings.ExcludePatterns) > 0 ||
+			len(s.settings.IncludePatterns) > 0) {
+		s.logger.WarnContext(
+			ctx,
+			"Using existing staged changes; include and exclude settings were not applied",
+		)
 	}
 
 	if len(stagedFiles) == 0 {
@@ -166,18 +183,47 @@ func (s *Service) Execute(ctx context.Context) error {
 		return fmt.Errorf("failed to generate suggestions: %w", err)
 	}
 
-	return s.processCommitMessages(ctx, messages, branch)
+	commitMessage, err := s.selectCommitMessage(ctx, messages, branch)
+	if err != nil {
+		return err
+	}
+	if commitMessage == "" {
+		return nil
+	}
+
+	if s.settings.DryRun {
+		s.logger.WarnContext(ctx, "Dry run enabled, no side effects created")
+		s.logger.InfoContext(ctx, "Final commit message", "message", commitMessage)
+		return nil
+	}
+
+	if err := s.gitOps.CreateCommit(staging, commitMessage); err != nil {
+		s.logger.ErrorContext(ctx, "Failed to create commit", "error", err)
+		return fmt.Errorf("failed to create commit: %w", err)
+	}
+
+	s.logger.InfoContext(
+		ctx, "Commit created",
+		"commit_message", commitMessage,
+	)
+
+	return s.processPostCommit(ctx, commitMessage)
 }
 
-// processCommitMessages handles the commit message selection and commit creation
-func (s *Service) processCommitMessages(ctx context.Context, messages map[string]string, branch string) error {
+// selectCommitMessage handles message selection and module transformations.
+// An empty message with no error means interactive selection was canceled.
+func (s *Service) selectCommitMessage(
+	ctx context.Context,
+	messages map[string]string,
+	branch string,
+) (string, error) {
 	var commitMessage string
 
 	if s.settings.Auto {
 		commitMessage = s.getRandomMessage(messages)
 		if commitMessage == "" {
 			s.logger.WarnContext(ctx, "No valid suggestions available for auto-commit")
-			return fmt.Errorf("no valid suggestions available for auto-commit")
+			return "", fmt.Errorf("no valid suggestions available for auto-commit")
 		}
 		s.logger.DebugContext(ctx, "Auto-selected commit message", "message", commitMessage)
 	} else {
@@ -197,10 +243,10 @@ func (s *Service) processCommitMessages(ctx context.Context, messages map[string
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				s.logger.WarnContext(ctx, "Interactive mode canceled by user")
-				return nil
+				return "", nil
 			}
 			s.logger.ErrorContext(ctx, "Failed to enter interactive mode", "error", err)
-			return fmt.Errorf("failed to run interactive ui: %w", err)
+			return "", fmt.Errorf("failed to run interactive ui: %w", err)
 		}
 
 		commitMessage = uiModel.GetFinalChoice()
@@ -223,7 +269,7 @@ func (s *Service) processCommitMessages(ctx context.Context, messages map[string
 
 	if len(commitMessage) == 0 {
 		s.logger.WarnContext(ctx, "No commit message provided")
-		return fmt.Errorf("no commit message provided")
+		return "", fmt.Errorf("no commit message provided")
 	}
 
 	for _, module := range s.modules {
@@ -268,66 +314,61 @@ func (s *Service) processCommitMessages(ctx context.Context, messages map[string
 	commitMessage = strings.Trim(commitMessage, "\n")
 	commitMessage = strings.TrimSpace(commitMessage)
 
-	if !s.settings.DryRun {
-		if err := s.gitOps.CreateCommit(commitMessage); err != nil {
-			s.logger.ErrorContext(ctx, "Failed to create commit", "error", err)
-			return fmt.Errorf("failed to create commit: %w", err)
+	if commitMessage == "" {
+		s.logger.WarnContext(ctx, "No commit message provided")
+		return "", fmt.Errorf("no commit message provided")
+	}
+
+	return commitMessage, nil
+}
+
+func (s *Service) processPostCommit(ctx context.Context, commitMessage string) error {
+	if s.settings.Push {
+		mrURL, err := s.gitOps.Push()
+		if err != nil {
+			s.logger.ErrorContext(ctx, "Failed to push to remote", "error", err)
+			return fmt.Errorf("failed to push: %w", err)
 		}
-		s.logger.InfoContext(
-			ctx, "Commit created",
-			"commit_message", commitMessage,
-		)
+		s.logger.InfoContext(ctx, "Successfully pushed to remote")
+
+		if mrURL != "" {
+			s.logger.InfoContext(ctx, "Create merge/pull request", "url", mrURL)
+		}
+	}
+
+	if s.settings.Tag != "" {
+		latestTag, err := s.gitOps.GetLatestTag()
+		if err != nil {
+			s.logger.ErrorContext(ctx, "Failed to get latest tag", "error", err)
+			return fmt.Errorf("failed to get latest tag: %w", err)
+		}
+
+		if latestTag == "" {
+			s.logger.WarnContext(ctx, "No existing tags found, will create first tag")
+		} else {
+			s.logger.InfoContext(ctx, "Latest tag found", "tag", latestTag)
+		}
+
+		newTag, err := s.gitOps.IncrementVersion(latestTag, s.settings.Tag)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "Failed to increment version", "error", err)
+			return fmt.Errorf("failed to increment version: %w", err)
+		}
+
+		if err := s.gitOps.CreateTag(newTag, commitMessage); err != nil {
+			s.logger.ErrorContext(ctx, "Failed to create tag", "tag", newTag, "error", err)
+			return fmt.Errorf("failed to create tag %s: %w", newTag, err)
+		}
+
+		s.logger.InfoContext(ctx, "Tag created", "tag", newTag)
 
 		if s.settings.Push {
-			mrURL, err := s.gitOps.Push()
-			if err != nil {
-				s.logger.ErrorContext(ctx, "Failed to push to remote", "error", err)
-				return fmt.Errorf("failed to push: %w", err)
+			if err := s.gitOps.PushTag(newTag); err != nil {
+				s.logger.ErrorContext(ctx, "Failed to push tag", "tag", newTag, "error", err)
+				return fmt.Errorf("failed to push tag %s: %w", newTag, err)
 			}
-			s.logger.InfoContext(ctx, "Successfully pushed to remote")
-
-			if mrURL != "" {
-				s.logger.InfoContext(ctx, "Create merge/pull request", "url", mrURL)
-			}
+			s.logger.InfoContext(ctx, "Tag pushed to remote", "tag", newTag)
 		}
-
-		if s.settings.Tag != "" {
-			latestTag, err := s.gitOps.GetLatestTag()
-			if err != nil {
-				s.logger.ErrorContext(ctx, "Failed to get latest tag", "error", err)
-				return fmt.Errorf("failed to get latest tag: %w", err)
-			}
-
-			if latestTag == "" {
-				s.logger.WarnContext(ctx, "No existing tags found, will create first tag")
-			} else {
-				s.logger.InfoContext(ctx, "Latest tag found", "tag", latestTag)
-			}
-
-			newTag, err := s.gitOps.IncrementVersion(latestTag, s.settings.Tag)
-			if err != nil {
-				s.logger.ErrorContext(ctx, "Failed to increment version", "error", err)
-				return fmt.Errorf("failed to increment version: %w", err)
-			}
-
-			if err := s.gitOps.CreateTag(newTag, commitMessage); err != nil {
-				s.logger.ErrorContext(ctx, "Failed to create tag", "tag", newTag, "error", err)
-				return fmt.Errorf("failed to create tag %s: %w", newTag, err)
-			}
-
-			s.logger.InfoContext(ctx, "Tag created", "tag", newTag)
-
-			if s.settings.Push {
-				if err := s.gitOps.PushTag(newTag); err != nil {
-					s.logger.ErrorContext(ctx, "Failed to push tag", "tag", newTag, "error", err)
-					return fmt.Errorf("failed to push tag %s: %w", newTag, err)
-				}
-				s.logger.InfoContext(ctx, "Tag pushed to remote", "tag", newTag)
-			}
-		}
-	} else {
-		s.logger.WarnContext(ctx, "Dry run enabled, no side effects created")
-		s.logger.InfoContext(ctx, "Final commit message", "message", commitMessage)
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package commit
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,14 +11,18 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 type gitOperations struct {
-	repo *git.Repository
+	repo         *git.Repository
+	repoPath     string
+	sessionLease sync.Mutex
 }
 
 type gitConfig struct {
@@ -36,14 +41,75 @@ type semVer struct {
 }
 
 func newGitOperations(repoPath string) (*gitOperations, error) {
+	if err := validateGitRoutingEnvironment(); err != nil {
+		return nil, err
+	}
+
+	absRepoPath, err := filepath.Abs(repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve repository path: %w", err)
+	}
+
 	repo, err := git.PlainOpenWithOptions(repoPath, &git.PlainOpenOptions{
-		DetectDotGit: true,
+		DetectDotGit:          true,
+		EnableDotGitCommonDir: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get repository worktree: %w", err)
+	}
+	worktreeRoot := worktree.Filesystem.Root()
+	if worktreeRoot == "" {
+		worktreeRoot = absRepoPath
+	}
+	worktreeRoot, err = filepath.Abs(worktreeRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve repository worktree: %w", err)
+	}
 
-	return &gitOperations{repo: repo}, nil
+	return &gitOperations{repo: repo, repoPath: worktreeRoot}, nil
+}
+
+func (g *gitOperations) gitCommand(args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Env = sanitizedGitEnvironment(os.Environ())
+	if g.repoPath != "" {
+		cmd.Dir = g.repoPath
+	}
+	return cmd
+}
+
+var gitRoutingEnvironment = map[string]struct{}{
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES": {},
+	"GIT_COMMON_DIR":                   {},
+	"GIT_DIR":                          {},
+	"GIT_INDEX_FILE":                   {},
+	"GIT_NAMESPACE":                    {},
+	"GIT_OBJECT_DIRECTORY":             {},
+	"GIT_WORK_TREE":                    {},
+}
+
+func validateGitRoutingEnvironment() error {
+	for variable := range gitRoutingEnvironment {
+		if value, ok := os.LookupEnv(variable); ok && value != "" {
+			return fmt.Errorf("%s is not supported; unset it before running commit", variable)
+		}
+	}
+	return nil
+}
+
+func sanitizedGitEnvironment(environment []string) []string {
+	filtered := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		if _, routed := gitRoutingEnvironment[name]; !routed {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
 
 // GetConfig reads git configuration - fails if user.name or user.email not configured
@@ -82,7 +148,7 @@ func (g *gitOperations) GetConfig() (*gitConfig, error) {
 
 // getConfigValue reads a specific git config value using git command
 func (g *gitOperations) getConfigValue(key string) string {
-	cmd := exec.Command("git", "config", key)
+	cmd := g.gitCommand("config", key)
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -156,12 +222,12 @@ func parseGitignoreFile(filePath string) ([]string, error) {
 }
 
 func (g *gitOperations) GetCurrentBranch() (string, error) {
-	head, err := g.repo.Head()
+	head, err := g.snapshotHead()
 	if err != nil {
 		return "", fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
-	branchName := head.Name().Short()
+	branchName := plumbing.ReferenceName(head.name).Short()
 	return branchName, nil
 }
 
@@ -356,28 +422,8 @@ func isSimpleGlobPattern(pattern string) bool {
 
 var contextLevels = []int{5, 3, 2, 1, 0}
 
-// getFilteredStagedFiles returns list of staged files excluding pre-defined patterns
-func (g *gitOperations) getFilteredStagedFiles() ([]string, error) {
-	cmd := exec.Command("git", "diff", "--cached", "--name-only")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-
-	files := strings.Split(strings.TrimSpace(string(output)), "\n")
-
-	filtered := make([]string, 0, len(files))
-	for _, file := range files {
-		if len(file) > 0 { // nothing yet
-			filtered = append(filtered, file)
-		}
-	}
-
-	return filtered, nil
-}
-
 func (g *gitOperations) GetStagedDiff(maxSizeBytes int) (string, error) {
-	diffFiles, err := g.getFilteredStagedFiles()
+	diffFiles, _, err := g.getStagedState()
 	if err != nil {
 		return "", fmt.Errorf("failed to get staged files: %w", err)
 	}
@@ -388,6 +434,7 @@ func (g *gitOperations) GetStagedDiff(maxSizeBytes int) (string, error) {
 
 	// Common diff options optimized for AI consumption
 	baseDiffOpts := []string{
+		"--literal-pathspecs",
 		"diff",
 		"--cached",
 		"--no-color",                // Remove ANSI color codes that confuse AI
@@ -407,7 +454,7 @@ func (g *gitOperations) GetStagedDiff(maxSizeBytes int) (string, error) {
 		contextOpts = append(contextOpts, "--")
 		contextOpts = append(contextOpts, diffFiles...)
 
-		cmd := exec.Command("git", contextOpts...)
+		cmd := g.gitCommand(contextOpts...)
 		output, err := cmd.Output()
 		if err != nil {
 			// If the command fails, it might be because no files match - return empty diff
@@ -428,7 +475,7 @@ func (g *gitOperations) GetStagedDiff(maxSizeBytes int) (string, error) {
 	contextOpts = append(contextOpts, "--")
 	contextOpts = append(contextOpts, diffFiles...)
 
-	cmd := exec.Command("git", contextOpts...)
+	cmd := g.gitCommand(contextOpts...)
 	output, err := cmd.Output()
 	if err != nil {
 		if strings.Contains(err.Error(), "exit status 128") {
@@ -445,7 +492,17 @@ func (g *gitOperations) GetStagedDiff(maxSizeBytes int) (string, error) {
 	return diff, nil
 }
 
-func (g *gitOperations) CreateCommit(message string) error {
+func (g *gitOperations) CreateCommit(
+	session *stagingSession,
+	message string,
+) error {
+	if err := g.validateStagingSession(session); err != nil {
+		return err
+	}
+	if session.closed {
+		return fmt.Errorf("staging session is already closed")
+	}
+
 	// Get git configuration
 	config, err := g.GetConfig()
 	if err != nil {
@@ -489,9 +546,51 @@ func (g *gitOperations) CreateCommit(message string) error {
 		}
 	}
 
-	_, err = worktree.Commit(message, commitOptions)
+	releaseLocks, err := g.lockAndVerifyStaging(session)
 	if err != nil {
-		return fmt.Errorf("failed to create commit: %w", err)
+		return err
+	}
+	released := false
+	defer func() {
+		if !released {
+			_ = releaseLocks()
+		}
+	}()
+
+	commitHash, err := worktree.Commit(message, commitOptions)
+	if err != nil {
+		commitCreated := false
+		var outcomeErr error
+		if !commitHash.IsZero() {
+			currentHead, headErr := g.snapshotHead()
+			if headErr != nil {
+				// A non-zero hash means the commit object was written and the
+				// HEAD update was attempted. If its outcome cannot be read, do
+				// not risk rolling the index back across a successful commit.
+				commitCreated = true
+				outcomeErr = fmt.Errorf("failed to verify HEAD after commit error: %w", headErr)
+			} else {
+				commitCreated = currentHead.hash == commitHash.String()
+			}
+		}
+		if commitCreated {
+			session.closed = true
+		}
+
+		releaseErr := releaseLocks()
+		released = true
+		return errors.Join(
+			fmt.Errorf("failed to create commit: %w", err),
+			outcomeErr,
+			wrapRepositoryLockError(releaseErr),
+		)
+	}
+
+	session.closed = true
+	releaseErr := releaseLocks()
+	released = true
+	if releaseErr != nil {
+		return fmt.Errorf("commit created but failed to release repository locks: %w", releaseErr)
 	}
 
 	return nil
@@ -750,5 +849,5 @@ func shouldIncludeFile(file string, patterns []string) bool {
 
 func (g *gitOperations) IsGitRepository() bool {
 	_, err := g.repo.Head()
-	return err == nil
+	return err == nil || errors.Is(err, plumbing.ErrReferenceNotFound)
 }
