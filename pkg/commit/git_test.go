@@ -169,6 +169,34 @@ func TestGitOperations_shouldExcludeFile(t *testing.T) {
 			expected:        false,
 		},
 		{
+			name:            "literal is not an implicit substring",
+			file:            "dialog.go",
+			excludePatterns: []string{"log"},
+			globalPatterns:  []string{},
+			expected:        false,
+		},
+		{
+			name:            "explicit wildcard enables substring matching",
+			file:            "dialog.go",
+			excludePatterns: []string{"*log*"},
+			globalPatterns:  []string{},
+			expected:        true,
+		},
+		{
+			name:            "empty pattern does not match",
+			file:            "main.go",
+			excludePatterns: []string{""},
+			globalPatterns:  []string{},
+			expected:        false,
+		},
+		{
+			name:            "extension text is not a path component",
+			file:            "main.go",
+			excludePatterns: []string{"go"},
+			globalPatterns:  []string{},
+			expected:        false,
+		},
+		{
 			name:            "exact match exclude",
 			file:            "test.log",
 			excludePatterns: []string{"test.log"},
@@ -204,11 +232,46 @@ func TestGitOperations_shouldExcludeFile(t *testing.T) {
 			expected:        true,
 		},
 		{
+			name:            "global literal is not an implicit substring",
+			file:            "rebuilder.c",
+			excludePatterns: []string{},
+			globalPatterns:  []string{"build"},
+			expected:        false,
+		},
+		{
 			name:            "directory pattern exclude",
 			file:            "build/output.js",
 			excludePatterns: []string{},
 			globalPatterns:  []string{"build/"},
 			expected:        true,
+		},
+		{
+			name:            "directory pattern respects component boundary",
+			file:            "rebuild/output.js",
+			excludePatterns: []string{},
+			globalPatterns:  []string{"build/"},
+			expected:        false,
+		},
+		{
+			name:            "directory component at nested depth",
+			file:            "nested/build/output.js",
+			excludePatterns: []string{"build/"},
+			globalPatterns:  []string{},
+			expected:        true,
+		},
+		{
+			name:            "root relative path glob",
+			file:            "src/main.go",
+			excludePatterns: []string{"src/*.go"},
+			globalPatterns:  []string{},
+			expected:        true,
+		},
+		{
+			name:            "root relative path glob does not float",
+			file:            "nested/src/main.go",
+			excludePatterns: []string{"src/*.go"},
+			globalPatterns:  []string{},
+			expected:        false,
 		},
 		{
 			name:            "multiple patterns - first match",
@@ -235,7 +298,11 @@ func TestGitOperations_shouldExcludeFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := shouldExcludeFile(tt.file, tt.excludePatterns, tt.globalPatterns)
+			result := shouldExcludeFile(
+				tt.file,
+				newPathPatternMatcher(tt.excludePatterns),
+				newPathPatternMatcher(tt.globalPatterns),
+			)
 			if result != tt.expected {
 				t.Errorf("shouldExcludeFile(%q, %v, %v) = %v, want %v",
 					tt.file, tt.excludePatterns, tt.globalPatterns, result, tt.expected)
@@ -282,6 +349,48 @@ func TestGitOperations_shouldIncludeFile(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "literal is not an implicit substring",
+			file:     "rapid.go",
+			patterns: []string{"api"},
+			expected: false,
+		},
+		{
+			name:     "explicit wildcard enables substring matching",
+			file:     "rapid.go",
+			patterns: []string{"*api*"},
+			expected: true,
+		},
+		{
+			name:     "empty pattern does not match",
+			file:     "rapid.go",
+			patterns: []string{""},
+			expected: false,
+		},
+		{
+			name:     "literal matches exact nested component",
+			file:     "src/api/handler.go",
+			patterns: []string{"api"},
+			expected: true,
+		},
+		{
+			name:     "root relative path glob",
+			file:     "src/handler.go",
+			patterns: []string{"src/*.go"},
+			expected: true,
+		},
+		{
+			name:     "root relative path glob does not match deeper path",
+			file:     "src/nested/handler.go",
+			patterns: []string{"src/*.go"},
+			expected: false,
+		},
+		{
+			name:     "character class glob",
+			file:     "api.go",
+			patterns: []string{"[ab]pi.go"},
+			expected: true,
+		},
+		{
 			name:     "multiple patterns - first match",
 			file:     "test.go",
 			patterns: []string{"*.go", "*.js"},
@@ -299,19 +408,34 @@ func TestGitOperations_shouldIncludeFile(t *testing.T) {
 			patterns: []string{"*.go", "*.js"},
 			expected: false,
 		},
-		{
-			name:     "substring match",
-			file:     "test-file.go",
-			patterns: []string{"test"},
-			expected: true,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := shouldIncludeFile(tt.file, tt.patterns)
+			result := shouldIncludeFile(tt.file, newPathPatternMatcher(tt.patterns))
 			if result != tt.expected {
 				t.Errorf("shouldIncludeFile(%q, %v) = %v, want %v", tt.file, tt.patterns, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestValidateSelectorPatterns(t *testing.T) {
+	tests := []struct {
+		name     string
+		patterns []string
+		wantErr  bool
+	}{
+		{name: "none", patterns: nil},
+		{name: "positive selectors", patterns: []string{"*.go", "src/**", "literal"}},
+		{name: "negation", patterns: []string{"*.go", "!generated.go"}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSelectorPatterns("include-only", tt.patterns)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateSelectorPatterns() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

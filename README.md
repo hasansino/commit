@@ -103,6 +103,13 @@ If changes are already staged, `commit` uses that exact staged set and does not 
 the tool stages matching changes temporarily and restores the original index after a
 dry run, cancellation, or failure before commit creation.
 
+`--include-only` and `--exclude` values are positive selectors and do not receive
+implicit wildcards. A literal such as `log` matches a complete file or directory
+name, not `dialog.go`; use an explicit wildcard such as `*log*` when substring
+matching is intended. Patterns use `/` as the path separator, and patterns containing
+`/`, such as `src/*.go`, are relative to the repository root. Leading `!` negation is
+not supported for these command-line selectors. This is similar to gitignore patterns, but with some differences. See the [gitignore documentation](https://git-scm.com/docs/gitignore).
+
 ## Configuration
 
 At least one *_API_KEY variable is required to use this tool.

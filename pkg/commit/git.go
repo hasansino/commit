@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -267,6 +268,13 @@ func (g *gitOperations) StageFiles(
 	includePatterns []string,
 	useGlobalGitignore bool,
 ) ([]string, error) {
+	if err := validateSelectorPatterns("exclude", excludePatterns); err != nil {
+		return nil, err
+	}
+	if err := validateSelectorPatterns("include-only", includePatterns); err != nil {
+		return nil, err
+	}
+
 	worktree, err := g.repo.Worktree()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get worktree: %w", err)
@@ -377,6 +385,10 @@ func (g *gitOperations) stageFiltered(
 		return nil, fmt.Errorf("failed to get status: %w", err)
 	}
 
+	excludeMatcher := newPathPatternMatcher(excludePatterns)
+	includeMatcher := newPathPatternMatcher(includePatterns)
+	globalMatcher := newPathPatternMatcher(globalPatterns)
+
 	// Build list of files to stage (filtering phase)
 	var filesToStage []string
 	for file := range status {
@@ -385,11 +397,11 @@ func (g *gitOperations) stageFiltered(
 			continue
 		}
 
-		if shouldExcludeFile(file, excludePatterns, globalPatterns) {
+		if shouldExcludeFile(file, excludeMatcher, globalMatcher) {
 			continue
 		}
 
-		if len(includePatterns) > 0 && !shouldIncludeFile(file, includePatterns) {
+		if includeMatcher != nil && !shouldIncludeFile(file, includeMatcher) {
 			continue
 		}
 
@@ -596,54 +608,50 @@ func (g *gitOperations) CreateCommit(
 	return nil
 }
 
-func shouldExcludeFile(file string, excludePatterns []string, globalPatterns []string) bool {
-	// First check global gitignore patterns
-	if len(globalPatterns) > 0 {
-		basename := filepath.Base(file)
-		for _, pattern := range globalPatterns {
-			// Handle directory patterns (ending with /)
-			if strings.HasSuffix(pattern, "/") {
-				dirPattern := strings.TrimSuffix(pattern, "/")
-				if strings.Contains(file, dirPattern+"/") {
-					return true
-				}
-			}
+type pathPatternMatcher struct {
+	matcher gitignore.Matcher
+}
 
-			// Fast string containment check first
-			if strings.Contains(file, pattern) || strings.Contains(basename, pattern) {
-				return true
-			}
-
-			// Glob matching for patterns with wildcards
-			if matched, _ := filepath.Match(pattern, file); matched {
-				return true
-			}
-			if matched, _ := filepath.Match(pattern, basename); matched {
-				return true
-			}
+func validateSelectorPatterns(kind string, patterns []string) error {
+	for _, pattern := range patterns {
+		if strings.HasPrefix(pattern, "!") {
+			return fmt.Errorf(
+				"invalid %s pattern %q: include and exclude patterns are positive selectors and do not support negation",
+				kind,
+				pattern,
+			)
 		}
 	}
+	return nil
+}
 
-	// Then check local exclude patterns (existing logic)
-	if len(excludePatterns) == 0 {
+func newPathPatternMatcher(patterns []string) *pathPatternMatcher {
+	if len(patterns) == 0 {
+		return nil
+	}
+
+	parsed := make([]gitignore.Pattern, 0, len(patterns))
+	for _, pattern := range patterns {
+		parsed = append(parsed, gitignore.ParsePattern(pattern, nil))
+	}
+
+	return &pathPatternMatcher{matcher: gitignore.NewMatcher(parsed)}
+}
+
+func (m *pathPatternMatcher) Match(file string) bool {
+	if m == nil {
 		return false
 	}
 
-	basename := filepath.Base(file)
-	for _, pattern := range excludePatterns {
-		// Fast string containment check first (most common case)
-		if strings.Contains(file, pattern) || strings.Contains(basename, pattern) {
-			return true
-		}
-		// Expensive glob matching only if simple checks fail
-		if matched, _ := filepath.Match(pattern, file); matched {
-			return true
-		}
-		if matched, _ := filepath.Match(pattern, basename); matched {
-			return true
-		}
-	}
-	return false
+	path := filepath.ToSlash(file)
+	return m.matcher.Match(strings.Split(path, "/"), false)
+}
+
+func shouldExcludeFile(
+	file string,
+	excludeMatcher, globalMatcher *pathPatternMatcher,
+) bool {
+	return globalMatcher.Match(file) || excludeMatcher.Match(file)
 }
 
 func (g *gitOperations) GetRemoteURL(remoteName string) (string, error) {
@@ -825,26 +833,8 @@ func (g *gitOperations) PushTag(tagName string) error {
 	return nil
 }
 
-func shouldIncludeFile(file string, patterns []string) bool {
-	if len(patterns) == 0 {
-		return false
-	}
-
-	basename := filepath.Base(file)
-	for _, pattern := range patterns {
-		// Fast string containment check first (most common case)
-		if strings.Contains(file, pattern) || strings.Contains(basename, pattern) {
-			return true
-		}
-		// Expensive glob matching only if simple checks fail
-		if matched, _ := filepath.Match(pattern, file); matched {
-			return true
-		}
-		if matched, _ := filepath.Match(pattern, basename); matched {
-			return true
-		}
-	}
-	return false
+func shouldIncludeFile(file string, matcher *pathPatternMatcher) bool {
+	return matcher.Match(file)
 }
 
 func (g *gitOperations) IsGitRepository() bool {

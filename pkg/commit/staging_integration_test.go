@@ -699,6 +699,111 @@ func TestStagingIntegration_ConcurrentHeadChangeIsNotOverwritten(t *testing.T) {
 	}
 }
 
+func TestStagingIntegration_FilterPatternsMatchPathComponents(t *testing.T) {
+	newFixture := func(t *testing.T) (string, *gitOperations) {
+		t.Helper()
+		repoPath := newStagingIntegrationRepo(t)
+		files := map[string]string{
+			"api":                       "exact include target\n",
+			"dialog.go":                 "contains log\n",
+			"log":                       "exact exclude target\n",
+			"main.go":                   "contains go\n",
+			"nested/build/output.txt":   "exact directory component\n",
+			"nested/rebuild/output.txt": "directory substring only\n",
+			"rapid.go":                  "contains api\n",
+			"rebuilder.c":               "contains build\n",
+		}
+		for name, contents := range files {
+			writeStagingIntegrationFile(t, repoPath, name, contents)
+		}
+		return repoPath, newStagingIntegrationGitOperations(t, repoPath)
+	}
+
+	t.Run("exclude literals and directories", func(t *testing.T) {
+		repoPath, gitOps := newFixture(t)
+		session, err := gitOps.BeginStaging([]string{"log", "go", "build/"}, nil, false)
+		if err != nil {
+			t.Fatalf("BeginStaging() error = %v", err)
+		}
+		assertStagingIntegrationPaths(t, session.files, []string{
+			"api",
+			"dialog.go",
+			"main.go",
+			"nested/rebuild/output.txt",
+			"rapid.go",
+			"rebuilder.c",
+		})
+		if err := gitOps.FinishStaging(session); err != nil {
+			t.Fatalf("FinishStaging() error = %v", err)
+		}
+		if got := string(runStagingIntegrationGit(t, repoPath, nil, "diff", "--cached", "--name-only")); got != "" {
+			t.Fatalf("rollback left paths staged: %q", got)
+		}
+	})
+
+	t.Run("include literal", func(t *testing.T) {
+		repoPath, gitOps := newFixture(t)
+		session, err := gitOps.BeginStaging(nil, []string{"api"}, false)
+		if err != nil {
+			t.Fatalf("BeginStaging() error = %v", err)
+		}
+		assertStagingIntegrationPaths(t, session.files, []string{"api"})
+		if err := gitOps.FinishStaging(session); err != nil {
+			t.Fatalf("FinishStaging() error = %v", err)
+		}
+		if got := string(runStagingIntegrationGit(t, repoPath, nil, "diff", "--cached", "--name-only")); got != "" {
+			t.Fatalf("rollback left paths staged: %q", got)
+		}
+	})
+
+	t.Run("global literal", func(t *testing.T) {
+		repoPath, gitOps := newFixture(t)
+		globalIgnorePath := filepath.Join(t.TempDir(), "global-ignore")
+		if err := os.WriteFile(globalIgnorePath, []byte("build\n"), 0o644); err != nil {
+			t.Fatalf("write global ignore: %v", err)
+		}
+		runStagingIntegrationGit(
+			t,
+			repoPath,
+			nil,
+			"config",
+			"core.excludesFile",
+			globalIgnorePath,
+		)
+
+		session, err := gitOps.BeginStaging(nil, nil, true)
+		if err != nil {
+			t.Fatalf("BeginStaging() error = %v", err)
+		}
+		assertStagingIntegrationPaths(t, session.files, []string{
+			"api",
+			"dialog.go",
+			"log",
+			"main.go",
+			"nested/rebuild/output.txt",
+			"rapid.go",
+			"rebuilder.c",
+		})
+		if err := gitOps.FinishStaging(session); err != nil {
+			t.Fatalf("FinishStaging() error = %v", err)
+		}
+		if got := string(runStagingIntegrationGit(t, repoPath, nil, "diff", "--cached", "--name-only")); got != "" {
+			t.Fatalf("rollback left paths staged: %q", got)
+		}
+	})
+
+	t.Run("selector negation is rejected", func(t *testing.T) {
+		repoPath, gitOps := newFixture(t)
+		if _, err := gitOps.BeginStaging([]string{"!api"}, nil, false); err == nil ||
+			!strings.Contains(err.Error(), "positive selectors") {
+			t.Fatalf("BeginStaging() error = %v, want unsupported-negation error", err)
+		}
+		if got := string(runStagingIntegrationGit(t, repoPath, nil, "diff", "--cached", "--name-only")); got != "" {
+			t.Fatalf("rejected pattern left paths staged: %q", got)
+		}
+	})
+}
+
 func TestNewGitOperationsRejectsAlternateIndexEnvironment(t *testing.T) {
 	repoPath := newStagingIntegrationRepo(t)
 	t.Setenv("GIT_INDEX_FILE", filepath.Join(t.TempDir(), "alternate-index"))
