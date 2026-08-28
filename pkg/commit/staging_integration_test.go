@@ -187,7 +187,11 @@ func TestStagingIntegration_NoChangesReturnsClosedSession(t *testing.T) {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
 	if len(session.files) != 0 || !session.closed {
-		t.Fatalf("empty staging session = {files:%q closed:%v}, want no files and closed", session.files, session.closed)
+		t.Fatalf(
+			"empty staging session = {files:%q closed:%v}, want no files and closed",
+			session.files,
+			session.closed,
+		)
 	}
 	if err := gitOps.FinishStaging(session); err != nil {
 		t.Fatalf("FinishStaging() error = %v", err)
