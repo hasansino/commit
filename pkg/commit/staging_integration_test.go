@@ -72,7 +72,8 @@ func TestStagingIntegration_ServiceCreatesFirstCommit(t *testing.T) {
 	if err := service.Execute(context.Background()); err != nil {
 		t.Fatalf("Execute() on unborn branch error = %v", err)
 	}
-	if got := string(runStagingIntegrationGit(t, repoPath, nil, "show", "HEAD:first.txt")); got != "service first commit\n" {
+	got := string(runStagingIntegrationGit(t, repoPath, nil, "show", "HEAD:first.txt"))
+	if got != "service first commit\n" {
 		t.Fatalf("HEAD:first.txt = %q, want service commit content", got)
 	}
 }
@@ -385,7 +386,8 @@ func TestStagingIntegration_FinishTrueKeepsCommittedIndex(t *testing.T) {
 	if bytes.Equal(indexAfter, indexBefore) {
 		t.Fatal("FinishStaging(true) restored the pre-commit index")
 	}
-	if got := string(runStagingIntegrationGit(t, repoPath, nil, "show", "HEAD:tracked.txt")); got != "committed change\n" {
+	got := string(runStagingIntegrationGit(t, repoPath, nil, "show", "HEAD:tracked.txt"))
+	if got != "committed change\n" {
 		t.Fatalf("HEAD:tracked.txt = %q, want committed content", got)
 	}
 	if got := string(runStagingIntegrationGit(t, repoPath, nil, "status", "--porcelain=v1")); got != "" {
@@ -493,7 +495,8 @@ func TestStagingIntegration_LinkedWorktreeUsesItsOwnIndex(t *testing.T) {
 	if err := gitOps.FinishStaging(commitSession); err != nil {
 		t.Fatalf("linked FinishStaging() error = %v", err)
 	}
-	if got := string(runStagingIntegrationGit(t, linkedPath, nil, "show", "HEAD:tracked.txt")); got != "linked worktree commit\n" {
+	got := string(runStagingIntegrationGit(t, linkedPath, nil, "show", "HEAD:tracked.txt"))
+	if got != "linked worktree commit\n" {
 		t.Fatalf("linked HEAD:tracked.txt = %q, want committed content", got)
 	}
 	if got := string(runStagingIntegrationGit(t, mainRepoPath, nil, "show", "HEAD:tracked.txt")); got != "base\n" {
@@ -564,7 +567,8 @@ func TestStagingIntegration_PackedNestedBranchCanRollbackAndCommit(t *testing.T)
 	if err := gitOps.FinishStaging(commitSession); err != nil {
 		t.Fatalf("FinishStaging(true) error = %v", err)
 	}
-	if got := string(runStagingIntegrationGit(t, repoPath, nil, "show", "HEAD:tracked.txt")); got != "change on packed nested branch\n" {
+	got := string(runStagingIntegrationGit(t, repoPath, nil, "show", "HEAD:tracked.txt"))
+	if got != "change on packed nested branch\n" {
 		t.Fatalf("HEAD:tracked.txt = %q, want packed-branch commit", got)
 	}
 }
