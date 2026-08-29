@@ -135,7 +135,7 @@ func (g *gitOperations) GetConfig() (*gitConfig, error) {
 
 	// Read optional GPG configuration
 	if gpgSign := g.getConfigValue("commit.gpgsign"); gpgSign != "" {
-		config.GPGSign = strings.ToLower(gpgSign) == "true"
+		config.GPGSign = configValueEnabled(gpgSign)
 	}
 	if signingKey := g.getConfigValue("user.signingkey"); signingKey != "" {
 		config.SigningKey = signingKey
@@ -601,6 +601,11 @@ func (g *gitOperations) CreateCommit(
 	}
 
 	return nil
+}
+
+func configValueEnabled(v string) bool {
+	lower := strings.ToLower(v)
+	return lower == "true" || lower == "yes" || lower == "on" || lower == "1"
 }
 
 type pathPatternMatcher struct {
