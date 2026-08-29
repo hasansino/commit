@@ -242,7 +242,7 @@ func (s *Service) selectCommitMessage(
 		)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				s.logger.WarnContext(ctx, "Interactive mode canceled by user")
+				s.logger.DebugContext(ctx, "Interactive mode canceled by user")
 				return "", nil
 			}
 			s.logger.ErrorContext(ctx, "Failed to enter interactive mode", "error", err)

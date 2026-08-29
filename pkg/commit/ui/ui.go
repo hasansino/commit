@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,8 +21,16 @@ func RenderInteractiveUI(
 	)
 
 	runResult, err := program.Run()
-	if err != nil {
-		return nil, fmt.Errorf("failed to run interactive ui: %w", err)
+	return resolveInteractiveUIResult(runResult, err)
+}
+
+func resolveInteractiveUIResult(runResult tea.Model, runErr error) (*Model, error) {
+	if errors.Is(runErr, tea.ErrInterrupted) {
+		return nil, fmt.Errorf("interactive ui canceled: %w", context.Canceled)
+	}
+
+	if runErr != nil {
+		return nil, fmt.Errorf("failed to run interactive ui: %w", runErr)
 	}
 
 	finalState, ok := runResult.(Model)
@@ -30,7 +39,7 @@ func RenderInteractiveUI(
 	}
 
 	if !finalState.IsDone() {
-		return nil, fmt.Errorf("ui was cancelled by user")
+		return nil, fmt.Errorf("interactive ui canceled: %w", context.Canceled)
 	}
 
 	return &finalState, nil

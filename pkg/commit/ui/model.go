@@ -168,7 +168,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle selection mode
 		switch msg.String() {
 		case KeyInterrupt, KeyQuit:
-			m.done = true
 			return m, tea.Quit
 		case KeySelect:
 			selected := m.list.SelectedItem()
@@ -244,7 +243,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateManualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case KeyInterrupt:
-		m.done = true
 		return m, tea.Quit
 	case KeyCancel:
 		m.manualMode = false
