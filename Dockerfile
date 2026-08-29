@@ -13,6 +13,8 @@ ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 
 # FROM resets arguments, so we need to declare them after.
+ARG TARGETOS
+ARG TARGETARCH
 ARG COMMIT_HASH
 ARG RELEASE_TAG
 
@@ -36,9 +38,8 @@ ENV GOGC=100
 
 # Build.
 #
-# `docker buildx` automates cross-complation and handles GOOS and GOARCH automatically.
-# It creates a single multi-arch image manifest that points to platform-specific
-# image layers, each built with the correct GOOS and GOARCH.
+# `docker buildx` provides TARGETOS and TARGETARCH for each target platform.
+# Pass them to the Go compiler explicitly when cross-compiling on BUILDPLATFORM.
 #
 # -trimpath removes file system paths from the binary, improves build reproducibility.
 #
@@ -52,13 +53,15 @@ ENV GOGC=100
 #
 RUN --mount=type=cache,target=/go/pkg/mod,id=gomodcache \
     --mount=type=cache,target=/root/.cache/go-build,id=gobuildcache \
-    go build -v -trimpath -buildvcs=false \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -v -trimpath -buildvcs=false \
     -ldflags "-s -w \
     -X github.com/hasansino/commit/internal/version.xBuildVersion=${RELEASE_TAG}" \
     -o commit .
 
 # Validate binary.
-RUN readelf -h commit && du -h commit && sha256sum commit && go tool buildid commit
+RUN go version -m commit | grep -F "GOOS=${TARGETOS}" && \
+    go version -m commit | grep -F "GOARCH=${TARGETARCH}" && \
+    readelf -h commit && du -h commit && sha256sum commit && go tool buildid commit
 
 # ---
 

@@ -28,14 +28,14 @@ jobs:
     uses: ./.github/workflows/110-golangci-lint.yaml
     with:
       runs_on: ubuntu-latest
-      continue_on_error: true
+      continue_on_error: false
 
   docker-lint:
     if: github.event_name == 'workflow_dispatch' || !endsWith(github.actor, '[bot]')
     uses: ./.github/workflows/110-docker-lint.yaml
     with:
       runs_on: ubuntu-latest
-      continue_on_error: true
+      continue_on_error: false
 
   unit-tests:
     uses: ./.github/workflows/120-unit-tests.yaml

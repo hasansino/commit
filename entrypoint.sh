@@ -3,7 +3,7 @@
 set -e
 
 # default command, expects 'commit' executable to be available in $PATH
-if [ "$1" = 'app' ]; then
+if [ "$1" = 'commit' ]; then
   shift
   exec commit "$@"
 fi
