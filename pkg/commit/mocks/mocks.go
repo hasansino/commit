@@ -191,18 +191,18 @@ func (m *MockaiServiceAccessor) EXPECT() *MockaiServiceAccessorMockRecorder {
 }
 
 // GenerateCommitMessages mocks base method.
-func (m *MockaiServiceAccessor) GenerateCommitMessages(ctx context.Context, diff, branch string, files, providers []string, customPrompt string, first, multiLine bool) (map[string]string, error) {
+func (m *MockaiServiceAccessor) GenerateCommitMessages(ctx context.Context, diff, branch string, files, providers []string, customPrompt string, multiLine bool) (map[string]string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GenerateCommitMessages", ctx, diff, branch, files, providers, customPrompt, first, multiLine)
+	ret := m.ctrl.Call(m, "GenerateCommitMessages", ctx, diff, branch, files, providers, customPrompt, multiLine)
 	ret0, _ := ret[0].(map[string]string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GenerateCommitMessages indicates an expected call of GenerateCommitMessages.
-func (mr *MockaiServiceAccessorMockRecorder) GenerateCommitMessages(ctx, diff, branch, files, providers, customPrompt, first, multiLine any) *gomock.Call {
+func (mr *MockaiServiceAccessorMockRecorder) GenerateCommitMessages(ctx, diff, branch, files, providers, customPrompt, multiLine any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateCommitMessages", reflect.TypeOf((*MockaiServiceAccessor)(nil).GenerateCommitMessages), ctx, diff, branch, files, providers, customPrompt, first, multiLine)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateCommitMessages", reflect.TypeOf((*MockaiServiceAccessor)(nil).GenerateCommitMessages), ctx, diff, branch, files, providers, customPrompt, multiLine)
 }
 
 // NumProviders mocks base method.

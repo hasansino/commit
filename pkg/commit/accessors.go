@@ -26,6 +26,6 @@ type aiServiceAccessor interface {
 		ctx context.Context,
 		diff, branch string, files []string,
 		providers []string, customPrompt string,
-		first bool, multiLine bool,
+		multiLine bool,
 	) (map[string]string, error)
 }

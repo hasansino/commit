@@ -75,7 +75,7 @@ func (s *aiService) GenerateCommitMessages(
 	ctx context.Context,
 	diff, branch string, files []string,
 	providers []string, customPrompt string,
-	first bool, multiLine bool,
+	multiLine bool,
 ) (map[string]string, error) {
 	// passed from --providers(-p) flag
 	activeProviders := s.FilterProviders(providers)
@@ -97,9 +97,7 @@ func (s *aiService) GenerateCommitMessages(
 		Err     error
 	}
 
-	commonCtx, commonCtxCancel := context.WithCancel(ctx)
-
-	wg := &sync.WaitGroup{}
+	var wg sync.WaitGroup
 	resultChan := make(chan providerResponse, len(activeProviders))
 
 	for _, provider := range activeProviders {
@@ -147,27 +145,31 @@ func (s *aiService) GenerateCommitMessages(
 				return
 			}
 
+			message := s.cleanupMessage(messages[0])
+			if message == "" {
+				err := errors.New("empty message received from provider")
+				s.logger.WarnContext(
+					ctx, "Empty message received from provider",
+					"provider", provider.Name(),
+				)
+				resultChan <- providerResponse{
+					Name: provider.Name(),
+					Err:  err,
+					Time: time.Since(now),
+				}
+				return
+			}
+
 			resultChan <- providerResponse{
 				Name:    provider.Name(),
-				Message: s.cleanupMessage(messages[0]),
+				Message: message,
 			}
-		}(commonCtx, provider)
+		}(ctx, provider)
 	}
 
 	results := make(map[string]string)
 
-	// we want first fastest response
-	if first {
-		msg := <-resultChan
-		results[msg.Name] = msg.Message
-		commonCtxCancel()
-		wg.Wait()
-		close(resultChan)
-		return results, nil
-	}
-
 	wg.Wait()
-	commonCtxCancel()
 	close(resultChan)
 	for result := range resultChan {
 		if result.Err != nil {

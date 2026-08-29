@@ -262,7 +262,7 @@ func TestAIService_GenerateCommitMessages(t *testing.T) {
 	providers := []string{"testprovider"}
 
 	messages, err := service.GenerateCommitMessages(
-		ctx, diff, branch, files, providers, "", false, false,
+		ctx, diff, branch, files, providers, "", false,
 	)
 
 	if err != nil {
@@ -275,6 +275,44 @@ func TestAIService_GenerateCommitMessages(t *testing.T) {
 
 	if messages["testprovider"] != "test commit message" {
 		t.Errorf("GenerateCommitMessages() = %q, want %q", messages["testprovider"], "test commit message")
+	}
+}
+
+func TestAIService_GenerateCommitMessages_AllProviders(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	firstProvider := mocks.NewMockproviderAccessor(ctrl)
+	firstProvider.EXPECT().Name().Return("provider1").AnyTimes()
+	firstProvider.EXPECT().Ask(gomock.Any(), gomock.Any()).Return([]string{"first message"}, nil)
+
+	secondProvider := mocks.NewMockproviderAccessor(ctrl)
+	secondProvider.EXPECT().Name().Return("provider2").AnyTimes()
+	secondProvider.EXPECT().Ask(gomock.Any(), gomock.Any()).Return([]string{"second message"}, nil)
+
+	service := &aiService{
+		logger:  slog.New(slog.DiscardHandler),
+		timeout: 30 * time.Second,
+		providers: map[string]providerAccessor{
+			"provider1": firstProvider,
+			"provider2": secondProvider,
+		},
+	}
+
+	messages, err := service.GenerateCommitMessages(
+		context.Background(), "diff", "main", []string{"file.go"}, nil, "", false,
+	)
+	if err != nil {
+		t.Fatalf("GenerateCommitMessages() error = %v", err)
+	}
+
+	if len(messages) != 2 {
+		t.Fatalf("GenerateCommitMessages() returned %d messages, want 2", len(messages))
+	}
+	if messages["provider1"] != "first message" {
+		t.Errorf("provider1 message = %q, want %q", messages["provider1"], "first message")
+	}
+	if messages["provider2"] != "second message" {
+		t.Errorf("provider2 message = %q, want %q", messages["provider2"], "second message")
 	}
 }
 
@@ -292,7 +330,7 @@ func TestAIService_GenerateCommitMessages_NoProviders(t *testing.T) {
 	providers := []string{"nonexistent"}
 
 	_, err := service.GenerateCommitMessages(
-		ctx, diff, branch, files, providers, "", false, false,
+		ctx, diff, branch, files, providers, "", false,
 	)
 
 	if err == nil {
@@ -305,56 +343,40 @@ func TestAIService_GenerateCommitMessages_NoProviders(t *testing.T) {
 	}
 }
 
-func TestAIService_GenerateCommitMessages_FirstMode(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockProvider1 := mocks.NewMockproviderAccessor(ctrl)
-	mockProvider1.EXPECT().Name().Return("provider1").AnyTimes()
-	mockProvider1.EXPECT().Ask(gomock.Any(), gomock.Any()).Return([]string{"first message"}, nil).AnyTimes()
-
-	mockProvider2 := mocks.NewMockproviderAccessor(ctrl)
-	mockProvider2.EXPECT().Name().Return("provider2").AnyTimes()
-	mockProvider2.EXPECT().Ask(gomock.Any(), gomock.Any()).Return([]string{"second message"}, nil).AnyTimes()
-
-	service := &aiService{
-		logger:  slog.New(slog.DiscardHandler),
-		timeout: 30 * time.Second,
-		providers: map[string]providerAccessor{
-			"provider1": mockProvider1,
-			"provider2": mockProvider2,
-		},
+func TestAIService_GenerateCommitMessages_RejectsUnusableMessages(t *testing.T) {
+	tests := []struct {
+		name     string
+		messages []string
+	}{
+		{name: "no messages", messages: nil},
+		{name: "blank after cleanup", messages: []string{" \n\t "}},
 	}
 
-	ctx := context.Background()
-	diff := "diff --git a/test.go b/test.go\n+func test() {}"
-	branch := "master"
-	files := []string{"test.go"}
-	providers := []string{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			provider := mocks.NewMockproviderAccessor(ctrl)
+			provider.EXPECT().Name().Return("unusable").AnyTimes()
+			provider.EXPECT().Ask(gomock.Any(), gomock.Any()).Return(tt.messages, nil)
 
-	messages, err := service.GenerateCommitMessages(
-		ctx, diff, branch, files, providers, "", true, false, // first = true
-	)
-
-	if err != nil {
-		t.Errorf("GenerateCommitMessages() unexpected error = %v", err)
-	}
-
-	if len(messages) != 1 {
-		t.Errorf("GenerateCommitMessages() with first=true returned %d messages, want 1", len(messages))
-	}
-
-	// Verify we got exactly one message from one of the providers
-	foundValidMessage := false
-	for providerName, message := range messages {
-		if providerName == "provider1" || providerName == "provider2" {
-			if message != "" {
-				foundValidMessage = true
+			service := &aiService{
+				logger:  slog.New(slog.DiscardHandler),
+				timeout: time.Second,
+				providers: map[string]providerAccessor{
+					"unusable": provider,
+				},
 			}
-		}
-	}
-	if !foundValidMessage {
-		t.Error("Expected to find a valid message from one of the providers")
+
+			messages, err := service.GenerateCommitMessages(
+				context.Background(), "diff", "main", []string{"file.go"}, nil, "", false,
+			)
+			if err != nil {
+				t.Fatalf("GenerateCommitMessages() error = %v", err)
+			}
+			if len(messages) != 0 {
+				t.Fatalf("GenerateCommitMessages() = %#v, want no messages", messages)
+			}
+		})
 	}
 }
 
@@ -393,7 +415,7 @@ func TestAIService_GenerateCommitMessages_ContextCancellation(t *testing.T) {
 	providers := []string{"testprovider"}
 
 	messages, err := service.GenerateCommitMessages(
-		ctx, diff, branch, files, providers, "", false, false,
+		ctx, diff, branch, files, providers, "", false,
 	)
 
 	if err != nil {
@@ -429,7 +451,7 @@ func TestAIService_GenerateCommitMessages_ProviderError(t *testing.T) {
 	providers := []string{"errorprovider"}
 
 	messages, err := service.GenerateCommitMessages(
-		ctx, diff, branch, files, providers, "", false, false,
+		ctx, diff, branch, files, providers, "", false,
 	)
 
 	if err != nil {

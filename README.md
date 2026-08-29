@@ -50,7 +50,6 @@ Download the latest binary from the [releases page](https://github.com/hasansino
 - Supports multi-line commit messages
 - Exclude/include specific file patterns and use global gitignore
 - Customizable commit message prompt templates
-- Option to use first or fastest response from providers
 - Configurable maximum diff size to include in prompts
 - Supports semantic versioning tag (major, minor, patch) incrementation and push
 - Option to push changes after committing to relevant remote branch
@@ -75,10 +74,9 @@ Available Commands:
   version     Version information
 
 Flags:
-      --auto                        Auto-commit with first and fastest response from provider.
+      --auto                        Automatically select a generated message and commit without opening the UI.
       --dry-run                     Show what would be committed without committing.
       --exclude strings             Exclude patterns, when staging changes.
-      --first                       Use first received message and discard others.
   -h, --help                        help for commit
       --include-only strings        Only include specific patterns, when staging changes.
       --jira-task-position string   Jira task position in commit message: prefix, infix, suffix, or none. (default "none")

@@ -26,7 +26,6 @@ func TestNewCommitService(t *testing.T) {
 				Providers:          []string{"openai"},
 				Timeout:            30 * time.Second,
 				CustomPrompt:       "",
-				First:              false,
 				Auto:               false,
 				DryRun:             false,
 				ExcludePatterns:    []string{},
@@ -377,7 +376,7 @@ func (s *simpleTestAdapter) GenerateCommitMessages(
 	ctx context.Context,
 	diff, branch string, files []string,
 	providers []string, customPrompt string,
-	first bool, multiLine bool,
+	multiLine bool,
 ) (map[string]string, error) {
 	if s.beforeGenerate != nil {
 		if err := s.beforeGenerate(); err != nil {

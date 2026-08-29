@@ -176,7 +176,7 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 		ctx,
 		diff, branch, stagedFiles,
 		s.settings.Providers, s.settings.CustomPrompt,
-		s.settings.First, s.settings.MultiLine,
+		s.settings.MultiLine,
 	)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to generate commit messages", "error", err)

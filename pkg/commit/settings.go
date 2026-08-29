@@ -9,8 +9,7 @@ type Settings struct {
 	Providers          []string      // AI providers to use for commit message generation
 	Timeout            time.Duration // Timeout for API requests
 	CustomPrompt       string        // Custom prompt template for commit messages
-	First              bool          // Use the first received message and discard others
-	Auto               bool          // Auto-commit with the first suggestion, no interactive mode
+	Auto               bool          // Automatically select a suggestion without interactive mode
 	DryRun             bool          // Show what would be committed without actually committing
 	ExcludePatterns    []string      // File patterns to exclude from the commit
 	IncludePatterns    []string      // File patterns to include in the commit

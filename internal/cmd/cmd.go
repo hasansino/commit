@@ -38,7 +38,6 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 				Providers:          viper.GetStringSlice("providers"),
 				Timeout:            viper.GetDuration("timeout"),
 				CustomPrompt:       viper.GetString("prompt"),
-				First:              viper.GetBool("first"),
 				Auto:               viper.GetBool("auto"),
 				DryRun:             viper.GetBool("dry-run"),
 				ExcludePatterns:    viper.GetStringSlice("exclude"),
@@ -81,10 +80,8 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 		"API timeout.")
 	flags.String("prompt", "",
 		"Custom prompt template.")
-	flags.Bool("first", false,
-		"Use first received message and discard others.")
 	flags.Bool("auto", false,
-		"Auto-commit with first and fastest response from provider.")
+		"Automatically select a generated message and commit without opening the UI.")
 	flags.Bool("dry-run", false,
 		"Show what would be committed without committing.")
 	flags.StringSlice("exclude", nil,
