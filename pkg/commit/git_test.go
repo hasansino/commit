@@ -1,6 +1,9 @@
 package commit
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -294,6 +297,84 @@ func TestGitOperations_shouldExcludeFile(t *testing.T) {
 			globalPatterns:  []string{"node_modules"},
 			expected:        true,
 		},
+		{
+			name:           "global negation reincludes basename",
+			file:           "keep.log",
+			globalPatterns: []string{"*.log", "!keep.log"},
+			expected:       false,
+		},
+		{
+			name:           "global negation reincludes nested basename",
+			file:           "nested/keep.log",
+			globalPatterns: []string{"*.log", "!keep.log"},
+			expected:       false,
+		},
+		{
+			name:           "global negation leaves other matches excluded",
+			file:           "nested/error.log",
+			globalPatterns: []string{"*.log", "!keep.log"},
+			expected:       true,
+		},
+		{
+			name:           "last global rule wins",
+			file:           "keep.log",
+			globalPatterns: []string{"!keep.log", "*.log"},
+			expected:       true,
+		},
+		{
+			name:           "negation cannot reinclude beneath ignored parent",
+			file:           "build/keep.log",
+			globalPatterns: []string{"build/", "!build/keep.log"},
+			expected:       true,
+		},
+		{
+			name: "reincluded parent permits child negation",
+			file: "build/keep.log",
+			globalPatterns: []string{
+				"build/",
+				"!build/",
+				"build/*",
+				"!build/keep.log",
+			},
+			expected: false,
+		},
+		{
+			name:           "trailing double star does not exclude its base directory",
+			file:           "generated/keep.txt",
+			globalPatterns: []string{"generated/**", "!generated/keep.txt"},
+			expected:       false,
+		},
+		{
+			name:           "trailing double star ignores unescaped trailing spaces",
+			file:           "generated/keep.txt",
+			globalPatterns: []string{"generated/**   ", "!generated/keep.txt"},
+			expected:       false,
+		},
+		{
+			name:           "trailing double star still excludes other descendants",
+			file:           "generated/drop.txt",
+			globalPatterns: []string{"generated/**", "!generated/keep.txt"},
+			expected:       true,
+		},
+		{
+			name:           "slash-scoped negation reincludes exact path",
+			file:           "logs/keep.log",
+			globalPatterns: []string{"*.log", "!logs/keep.log"},
+			expected:       false,
+		},
+		{
+			name:           "slash-scoped negation remains root relative",
+			file:           "nested/logs/keep.log",
+			globalPatterns: []string{"*.log", "!logs/keep.log"},
+			expected:       true,
+		},
+		{
+			name:            "explicit exclusion overrides global negation",
+			file:            "keep.log",
+			excludePatterns: []string{"keep.log"},
+			globalPatterns:  []string{"*.log", "!keep.log"},
+			expected:        true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -506,6 +587,30 @@ func TestParseGitignoreFile_InvalidPath(t *testing.T) {
 			"parseGitignoreFile() with non-existent file should return empty patterns, got %d patterns",
 			len(patterns),
 		)
+	}
+}
+
+func TestParseGitignoreFile_PreservesOrderedRules(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "global-ignore")
+	contents := "# comment\r\n \r\n*.log\r\n!keep.log\r\n\\!literal-bang\r\n\\#literal-hash\r\n leading-space\r\nname\\ \r\n"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write global ignore: %v", err)
+	}
+
+	patterns, err := parseGitignoreFile(path)
+	if err != nil {
+		t.Fatalf("parseGitignoreFile() error = %v", err)
+	}
+	want := []string{
+		"*.log",
+		"!keep.log",
+		`\!literal-bang`,
+		`\#literal-hash`,
+		" leading-space",
+		`name\ `,
+	}
+	if !slices.Equal(patterns, want) {
+		t.Fatalf("parseGitignoreFile() = %#v, want %#v", patterns, want)
 	}
 }
 

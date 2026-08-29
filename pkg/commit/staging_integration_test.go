@@ -808,6 +808,61 @@ func TestStagingIntegration_FilterPatternsMatchPathComponents(t *testing.T) {
 	})
 }
 
+func TestStagingIntegration_GlobalIgnoreNegation(t *testing.T) {
+	repoPath := newStagingIntegrationRepo(t)
+	files := map[string]string{
+		"error.log":          "ignored root log\n",
+		"generated/drop.txt": "ignored generated file\n",
+		"generated/keep.txt": "reincluded generated file\n",
+		"keep.log":           "reincluded root log\n",
+		"main.go":            "ordinary file\n",
+		"nested/error.log":   "ignored nested log\n",
+		"nested/keep.log":    "reincluded nested log\n",
+	}
+	for name, contents := range files {
+		writeStagingIntegrationFile(t, repoPath, name, contents)
+	}
+
+	globalIgnorePath := filepath.Join(t.TempDir(), "global-ignore")
+	globalIgnore := "*.log\n!keep.log\ngenerated/**\n!generated/keep.txt\n"
+	if err := os.WriteFile(globalIgnorePath, []byte(globalIgnore), 0o600); err != nil {
+		t.Fatalf("write global ignore: %v", err)
+	}
+	runStagingIntegrationGit(
+		t,
+		repoPath,
+		nil,
+		"config",
+		"core.excludesFile",
+		globalIgnorePath,
+	)
+
+	gitOps := newStagingIntegrationGitOperations(t, repoPath)
+	session, err := gitOps.BeginStaging(nil, nil, true)
+	if err != nil {
+		t.Fatalf("BeginStaging() error = %v", err)
+	}
+	assertStagingIntegrationPaths(t, session.files, []string{
+		"generated/keep.txt",
+		"keep.log",
+		"main.go",
+		"nested/keep.log",
+	})
+	if err := gitOps.FinishStaging(session); err != nil {
+		t.Fatalf("FinishStaging() error = %v", err)
+	}
+	if got := string(runStagingIntegrationGit(
+		t,
+		repoPath,
+		nil,
+		"diff",
+		"--cached",
+		"--name-only",
+	)); got != "" {
+		t.Fatalf("rollback left paths staged: %q", got)
+	}
+}
+
 func TestNewGitOperationsRejectsAlternateIndexEnvironment(t *testing.T) {
 	repoPath := newStagingIntegrationRepo(t)
 	t.Setenv("GIT_INDEX_FILE", filepath.Join(t.TempDir(), "alternate-index"))

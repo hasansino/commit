@@ -185,7 +185,7 @@ func (g *gitOperations) getGlobalGitignoreFile() (string, error) {
 	return excludesFile, nil
 }
 
-// parseGitignoreFile parses a gitignore file and returns exclude patterns
+// parseGitignoreFile returns the file's active patterns in priority order.
 func parseGitignoreFile(filePath string) ([]string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -200,15 +200,10 @@ func parseGitignoreFile(filePath string) ([]string, error) {
 	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := strings.TrimSuffix(scanner.Text(), "\r")
 
 		// Skip empty lines and comments
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// Skip negation patterns (!) for simplicity in exclude-only logic
-		if strings.HasPrefix(line, "!") {
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
@@ -609,7 +604,8 @@ func (g *gitOperations) CreateCommit(
 }
 
 type pathPatternMatcher struct {
-	matcher gitignore.Matcher
+	matcher          gitignore.Matcher
+	directoryMatcher gitignore.Matcher
 }
 
 func validateSelectorPatterns(kind string, patterns []string) error {
@@ -631,11 +627,28 @@ func newPathPatternMatcher(patterns []string) *pathPatternMatcher {
 	}
 
 	parsed := make([]gitignore.Pattern, 0, len(patterns))
+	directoryPatterns := make([]gitignore.Pattern, 0, len(patterns))
 	for _, pattern := range patterns {
 		parsed = append(parsed, gitignore.ParsePattern(pattern, nil))
+
+		directoryPattern := pattern
+		if !strings.HasSuffix(directoryPattern, `\ `) {
+			directoryPattern = strings.TrimRight(directoryPattern, " ")
+		}
+		// go-git matches foo/** against foo itself; Git matches only foo's contents.
+		if strings.HasSuffix(strings.TrimPrefix(directoryPattern, "!"), "/**") {
+			directoryPattern += "/*"
+		}
+		directoryPatterns = append(
+			directoryPatterns,
+			gitignore.ParsePattern(directoryPattern, nil),
+		)
 	}
 
-	return &pathPatternMatcher{matcher: gitignore.NewMatcher(parsed)}
+	return &pathPatternMatcher{
+		matcher:          gitignore.NewMatcher(parsed),
+		directoryMatcher: gitignore.NewMatcher(directoryPatterns),
+	}
 }
 
 func (m *pathPatternMatcher) Match(file string) bool {
@@ -647,11 +660,27 @@ func (m *pathPatternMatcher) Match(file string) bool {
 	return m.matcher.Match(strings.Split(path, "/"), false)
 }
 
+func (m *pathPatternMatcher) MatchGitignore(file string) bool {
+	if m == nil {
+		return false
+	}
+
+	path := strings.Split(filepath.ToSlash(file), "/")
+	// Git cannot reinclude a file while one of its parent directories remains ignored.
+	for i := 1; i < len(path); i++ {
+		if m.directoryMatcher.Match(path[:i], true) {
+			return true
+		}
+	}
+
+	return m.matcher.Match(path, false)
+}
+
 func shouldExcludeFile(
 	file string,
 	excludeMatcher, globalMatcher *pathPatternMatcher,
 ) bool {
-	return globalMatcher.Match(file) || excludeMatcher.Match(file)
+	return globalMatcher.MatchGitignore(file) || excludeMatcher.Match(file)
 }
 
 func (g *gitOperations) GetRemoteURL(remoteName string) (string, error) {
