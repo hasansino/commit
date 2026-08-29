@@ -502,11 +502,31 @@ func TestAIService_cleanupMessage(t *testing.T) {
 			in:   "```\nhello world\n```",
 			out:  "hello world",
 		},
-		//{
-		//	name: "fenced with language hint",
-		//	in:   "```go\nfmt.Println(\"hi\")\n```",
-		//	out:  "fmt.Println(\"hi\")",
-		//},
+		{
+			name: "fenced with language hint",
+			in:   "```gitcommit\nfeat: add login\n```",
+			out:  "feat: add login",
+		},
+		{
+			name: "fenced with generic language hint",
+			in:   "```text\nfeat: add login\n\nbody\n```",
+			out:  "feat: add login\n\nbody",
+		},
+		{
+			name: "fenced with spaced language hint and CRLF",
+			in:   "``` gitcommit\r\nfeat: add login\r\n```",
+			out:  "feat: add login",
+		},
+		{
+			name: "language name on content line is preserved",
+			in:   "```\ngitcommit\nfeat: add login\n```",
+			out:  "gitcommit\nfeat: add login",
+		},
+		{
+			name: "inline language name is content",
+			in:   "```gitcommit```",
+			out:  "gitcommit",
+		},
 		{
 			name: "drop outside of fences",
 			in:   "prefix\n```\ninside\n```\nsuffix",
@@ -536,6 +556,16 @@ func TestAIService_cleanupMessage(t *testing.T) {
 			name: "empty fenced content",
 			in:   "``````",
 			out:  "",
+		},
+		{
+			name: "empty tagged fenced content",
+			in:   "```text\n```",
+			out:  "",
+		},
+		{
+			name: "overlapping fences are left untouched",
+			in:   "````",
+			out:  "````",
 		},
 		{
 			name: "spaces inside fenced content trimmed",

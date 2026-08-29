@@ -197,15 +197,21 @@ func (s *aiService) cleanupMessage(message string) string {
 	start := strings.Index(message, fence)
 	end := strings.LastIndex(message, fence)
 
-	if start != -1 && end != -1 && end > start {
-		start += len(fence)
-		message = message[start:end]
+	contentStart := start + len(fence)
+	if start != -1 && end >= contentStart {
+		message = message[contentStart:end]
+
+		// A fenced block may have an info string, such as "gitcommit", on
+		// the opening fence's line. Drop that line without changing inline
+		// fenced content or the existing outermost-fence behavior.
+		lineEnd := strings.IndexByte(message, '\n')
+		nextFence := strings.Index(message, fence)
+		if lineEnd != -1 && (nextFence == -1 || lineEnd < nextFence) {
+			message = message[lineEnd+1:]
+		}
 	}
 
-	message = strings.Trim(message, "\n")
-	message = strings.TrimSpace(message)
-
-	return message
+	return strings.TrimSpace(message)
 }
 
 func (s *aiService) buildPrompt(diff, branch string, files []string, multiLine bool) string {
