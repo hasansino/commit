@@ -207,7 +207,7 @@ func TestJiraCornerCases(t *testing.T) {
 			branch:        "feature/TASK-106-feature",
 			commitMessage: "(TASK-106) Already has parens",
 			expected:      "(TASK-106) Already has parens",
-			shouldChange:  true,
+			shouldChange:  false,
 		},
 		{
 			name:          "JIRA ID partially in message",
@@ -321,7 +321,7 @@ func TestJiraCornerCases(t *testing.T) {
 			branch:        "feature/TASK-501-feature",
 			commitMessage: "[TASK-501] Already formatted",
 			expected:      "[TASK-501] Already formatted",
-			shouldChange:  true,
+			shouldChange:  false,
 		},
 	}
 
@@ -337,6 +337,13 @@ func TestJiraCornerCases(t *testing.T) {
 
 			if changed != tt.shouldChange {
 				t.Errorf("expected changed=%v, got %v", tt.shouldChange, changed)
+			}
+			if changed != (result != tt.commitMessage) {
+				t.Errorf(
+					"changed=%v, but result mutation status is %v",
+					changed,
+					result != tt.commitMessage,
+				)
 			}
 
 			if result != tt.expected {
@@ -578,7 +585,7 @@ func TestJiraTaskDetectorBasicAPI(t *testing.T) {
 			branch:        "feature/TASK-999-new-feature",
 			commitMessage: "feat(api): implement TASK-999 endpoint",
 			expected:      "feat(api): implement TASK-999 endpoint",
-			shouldChange:  true,
+			shouldChange:  false,
 		},
 		{
 			name:          "simple message without conventional format - brackets infix",
@@ -621,6 +628,13 @@ func TestJiraTaskDetectorBasicAPI(t *testing.T) {
 
 			if changed != tt.shouldChange {
 				t.Errorf("expected changed=%v, got %v", tt.shouldChange, changed)
+			}
+			if changed != (result != tt.commitMessage) {
+				t.Errorf(
+					"changed=%v, but result mutation status is %v",
+					changed,
+					result != tt.commitMessage,
+				)
 			}
 
 			if result != tt.expected {

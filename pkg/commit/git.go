@@ -455,6 +455,7 @@ func (g *gitOperations) GetStagedDiff(maxSizeBytes int) (string, error) {
 	}
 
 	// Try different context levels to fit within maxSize
+	var diff string
 	for _, contextLevel := range contextLevels {
 		contextOpts := append([]string{}, baseDiffOpts...)
 		contextOpts = append(contextOpts, fmt.Sprintf("-U%d", contextLevel))
@@ -471,27 +472,12 @@ func (g *gitOperations) GetStagedDiff(maxSizeBytes int) (string, error) {
 			return "", fmt.Errorf("failed to get staged diff: %w", err)
 		}
 
-		diff := string(output)
+		diff = string(output)
 		if len(diff) <= maxSizeBytes {
 			return diff, nil
 		}
 	}
 
-	contextOpts := append([]string{}, baseDiffOpts...)
-	contextOpts = append(contextOpts, "-U0")
-	contextOpts = append(contextOpts, "--")
-	contextOpts = append(contextOpts, diffFiles...)
-
-	cmd := g.gitCommand(contextOpts...)
-	output, err := cmd.Output()
-	if err != nil {
-		if strings.Contains(err.Error(), "exit status 128") {
-			return "", nil
-		}
-		return "", fmt.Errorf("failed to get staged diff: %w", err)
-	}
-
-	diff := string(output)
 	if len(diff) > maxSizeBytes {
 		return diff[:maxSizeBytes], nil
 	}

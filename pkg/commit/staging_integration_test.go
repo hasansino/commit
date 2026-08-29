@@ -3,11 +3,13 @@ package commit
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -601,6 +603,53 @@ func TestStagingIntegration_ExistingStagedUnusualFilenameIsPreserved(t *testing.
 	}
 	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
 		t.Fatal("existing unusual-path staging changed after rollback")
+	}
+}
+
+func TestStagingIntegration_GetStagedDiffRunsZeroContextOnce(t *testing.T) {
+	repoPath := newStagingIntegrationRepo(t)
+	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "changed content\n")
+	runStagingIntegrationGit(t, repoPath, nil, "add", "--", "tracked.txt")
+
+	gitOps := newStagingIntegrationGitOperations(t, repoPath)
+	tracePath := filepath.Join(t.TempDir(), "git-trace.json")
+	t.Setenv("GIT_TRACE2_EVENT", tracePath)
+
+	diff, err := gitOps.GetStagedDiff(1)
+	if err != nil {
+		t.Fatalf("GetStagedDiff() error = %v", err)
+	}
+	if len(diff) != 1 {
+		t.Fatalf("len(GetStagedDiff()) = %d, want 1", len(diff))
+	}
+
+	trace, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatalf("read Git trace: %v", err)
+	}
+
+	var zeroContextDiffs int
+	for _, line := range bytes.Split(trace, []byte{'\n'}) {
+		if len(line) == 0 {
+			continue
+		}
+		var event struct {
+			Event string   `json:"event"`
+			Argv  []string `json:"argv"`
+		}
+		if err := json.Unmarshal(line, &event); err != nil {
+			t.Fatalf("decode Git trace event %q: %v", line, err)
+		}
+		if event.Event == "start" &&
+			slices.Contains(event.Argv, "diff") &&
+			slices.Contains(event.Argv, "--cached") &&
+			slices.Contains(event.Argv, "--function-context") &&
+			slices.Contains(event.Argv, "-U0") {
+			zeroContextDiffs++
+		}
+	}
+	if zeroContextDiffs != 1 {
+		t.Errorf("zero-context staged diff command count = %d, want 1", zeroContextDiffs)
 	}
 }
 

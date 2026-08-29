@@ -83,7 +83,8 @@ func (j *JIRATaskDetector) TransformCommitMessage(_ context.Context, branch, mes
 		return message, false, nil
 	}
 
-	return j.addJiraID(message, jiraID), true, nil
+	updatedMessage := j.addJiraID(message, jiraID)
+	return updatedMessage, updatedMessage != message, nil
 }
 
 func (j *JIRATaskDetector) detectJiraID(branchName string) string {
