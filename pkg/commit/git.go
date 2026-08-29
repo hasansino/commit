@@ -689,30 +689,62 @@ func shouldExcludeFile(
 }
 
 func (g *gitOperations) GetRemoteURL(remoteName string) (string, error) {
-	remote, err := g.repo.Remote(remoteName)
+	configKey := fmt.Sprintf("remote.%s.url", remoteName)
+	cmd := g.gitCommand("config", "--get-all", configKey)
+	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("failed to get remote '%s': %w", remoteName, err)
+		return "", fmt.Errorf("failed to get URL for remote '%s': %w", remoteName, err)
 	}
 
-	config := remote.Config()
-	if len(config.URLs) == 0 {
+	remoteURLs := strings.Split(strings.TrimSpace(string(output)), "\n")
+	remoteURL := strings.TrimSpace(remoteURLs[0])
+	if remoteURL == "" {
 		return "", fmt.Errorf("remote '%s' has no URLs", remoteName)
 	}
-
-	// Return the first URL (usually there's only one)
-	return config.URLs[0], nil
+	return remoteURL, nil
 }
 
-func (g *gitOperations) GetDefaultBranch() string {
-	cmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
+func (g *gitOperations) GetDefaultBranch(remoteName string) string {
+	remotePrefix := fmt.Sprintf("refs/remotes/%s/", remoteName)
+	cmd := g.gitCommand("symbolic-ref", "--quiet", remotePrefix+"HEAD")
 	output, err := cmd.Output()
 	if err == nil {
 		branch := strings.TrimSpace(string(output))
-		if strings.HasPrefix(branch, "refs/remotes/origin/") {
-			return strings.TrimPrefix(branch, "refs/remotes/origin/")
+		if strings.HasPrefix(branch, remotePrefix) {
+			return strings.TrimPrefix(branch, remotePrefix)
 		}
 	}
-	return "master"
+	return ""
+}
+
+func (g *gitOperations) getPushRemoteName(branch string) (string, error) {
+	branchRef := plumbing.NewBranchReferenceName(branch)
+	cmd := g.gitCommand(
+		"for-each-ref",
+		"--format=%(push:remotename)",
+		branchRef.String(),
+	)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve push remote for branch %s: %w", branch, err)
+	}
+
+	remoteName := strings.TrimSpace(string(output))
+	if remoteName != "" {
+		return remoteName, nil
+	}
+
+	remoteOutput, err := g.gitCommand("remote").Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to list remotes: %w", err)
+	}
+	remoteNames := strings.Split(strings.TrimSpace(string(remoteOutput)), "\n")
+	if len(remoteNames) == 1 && remoteNames[0] != "" {
+		return strings.TrimSpace(remoteNames[0]), nil
+	}
+
+	// Preserve Git's conventional fallback when no unique remote is available.
+	return "origin", nil
 }
 
 func (g *gitOperations) Push() (string, error) {
@@ -722,15 +754,27 @@ func (g *gitOperations) Push() (string, error) {
 		return "", fmt.Errorf("failed to get current branch: %w", err)
 	}
 
-	// Push to the matching branch on the remote
-	cmd := exec.Command("git", "push", "origin", branch)
+	remoteName, err := g.getPushRemoteName(branch)
+	if err != nil {
+		return "", err
+	}
+
+	// Keep the existing one-branch contract while honoring Git's configured push remote.
+	branchRef := plumbing.NewBranchReferenceName(branch).String()
+	cmd := g.gitCommand("push", "--", remoteName, branchRef)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to push to origin/%s: %w\nOutput: %s", branch, err, string(output))
+		return "", fmt.Errorf(
+			"failed to push %s to %s: %w\nOutput: %s",
+			branch,
+			remoteName,
+			err,
+			string(output),
+		)
 	}
 
 	// Generate MR/PR URL if possible
-	remoteURL, err := g.GetRemoteURL("origin")
+	remoteURL, err := g.GetRemoteURL(remoteName)
 	if err != nil {
 		// Don't fail the push, just log that we couldn't get the URL
 		return "", nil
@@ -743,7 +787,7 @@ func (g *gitOperations) Push() (string, error) {
 	}
 
 	// Get the default/target branch for MR/PR
-	targetBranch := g.GetDefaultBranch()
+	targetBranch := g.GetDefaultBranch(remoteName)
 
 	if branch != targetBranch {
 		return generateMergeRequestURL(remoteInfo, branch, targetBranch), nil
@@ -859,10 +903,26 @@ func (g *gitOperations) CreateTag(tagName string, message string) error {
 
 // PushTag pushes the tag to the remote repository
 func (g *gitOperations) PushTag(tagName string) error {
-	cmd := exec.Command("git", "push", "origin", tagName)
+	branch, err := g.GetCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+	remoteName, err := g.getPushRemoteName(branch)
+	if err != nil {
+		return err
+	}
+
+	tagRef := plumbing.NewTagReferenceName(tagName).String()
+	cmd := g.gitCommand("push", "--", remoteName, tagRef)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to push tag %s: %w\nOutput: %s", tagName, err, string(output))
+		return fmt.Errorf(
+			"failed to push tag %s to %s: %w\nOutput: %s",
+			tagName,
+			remoteName,
+			err,
+			string(output),
+		)
 	}
 	return nil
 }

@@ -56,6 +56,17 @@ func TestParseRemoteURL(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:      "GitHub SSH URL with port",
+			remoteURL: "ssh://git@github.com:2222/owner/repo.git",
+			wantInfo: &RemoteInfo{
+				Platform: PlatformGitHub,
+				Host:     "github.com",
+				Owner:    "owner",
+				Repo:     "repo",
+			},
+			wantErr: false,
+		},
+		{
 			name:      "GitLab HTTPS URL",
 			remoteURL: "https://gitlab.com/owner/repo.git",
 			wantInfo: &RemoteInfo{
@@ -94,6 +105,28 @@ func TestParseRemoteURL(t *testing.T) {
 			wantInfo: &RemoteInfo{
 				Platform: PlatformGitLab,
 				Host:     "gitlab.com",
+				Owner:    "group/subgroup",
+				Repo:     "repo",
+			},
+			wantErr: false,
+		},
+		{
+			name:      "GitLab SSH URL with port",
+			remoteURL: "ssh://git@gitlab.co:22/group/repo.git",
+			wantInfo: &RemoteInfo{
+				Platform: PlatformGitLab,
+				Host:     "gitlab.co",
+				Owner:    "group",
+				Repo:     "repo",
+			},
+			wantErr: false,
+		},
+		{
+			name:      "self-hosted GitLab SSH URL with port and subgroup",
+			remoteURL: "ssh://deploy@gitlab.example.com:2222/group/subgroup/repo.git",
+			wantInfo: &RemoteInfo{
+				Platform: PlatformGitLab,
+				Host:     "gitlab.example.com",
 				Owner:    "group/subgroup",
 				Repo:     "repo",
 			},
@@ -179,6 +212,19 @@ func TestParseRemoteURL(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSSHRemoteWithPortGeneratesMergeRequestURL(t *testing.T) {
+	info, err := parseRemoteURL("ssh://git@gitlab.co:22/group/repo.git")
+	if err != nil {
+		t.Fatalf("parseRemoteURL() error = %v", err)
+	}
+
+	got := generateMergeRequestURL(info, "feature-branch", "master")
+	want := "https://gitlab.co/group/repo/-/merge_requests/new?merge_request%5Bsource_branch%5D=feature-branch&merge_request%5Btarget_branch%5D=master"
+	if got != want {
+		t.Fatalf("generateMergeRequestURL() = %q, want %q", got, want)
 	}
 }
 

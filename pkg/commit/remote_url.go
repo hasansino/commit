@@ -57,25 +57,28 @@ func parseRemoteURL(remoteURL string) (*RemoteInfo, error) {
 		} else {
 			return nil, fmt.Errorf("invalid repository path in URL")
 		}
+	} else if strings.HasPrefix(remoteURL, "ssh://") {
+		// URI-form SSH URLs can include a transport port. It must not become
+		// part of the repository path or the generated browser URL.
+		u, err := url.Parse(remoteURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse SSH URL: %w", err)
+		}
+
+		info.Host = u.Hostname()
+		if info.Host == "" {
+			return nil, fmt.Errorf("invalid host in SSH URL")
+		}
+		if err := parseSSHRepositoryPath(info, u.Path); err != nil {
+			return nil, err
+		}
 	} else {
 		// Handle SSH URLs (git@host:owner/repo.git or git@host:group/subgroup/repo.git)
-		sshPattern := regexp.MustCompile(`^(?:ssh://)?(?:git@)?([^:/]+)[:/](.+?)(?:\.git)?$`)
+		sshPattern := regexp.MustCompile(`^(?:git@)?([^:/]+)[:/](.+?)(?:\.git)?$`)
 		if matches := sshPattern.FindStringSubmatch(remoteURL); len(matches) == 3 {
 			info.Host = matches[1]
-
-			// Split the path to handle both simple and nested paths
-			pathParts := strings.Split(matches[2], "/")
-			if len(pathParts) >= 2 {
-				// For GitLab, handle subgroups
-				if strings.Contains(strings.ToLower(matches[1]), "gitlab") && len(pathParts) > 2 {
-					info.Owner = strings.Join(pathParts[:len(pathParts)-1], "/")
-					info.Repo = strings.TrimSuffix(pathParts[len(pathParts)-1], ".git")
-				} else {
-					info.Owner = pathParts[0]
-					info.Repo = strings.TrimSuffix(strings.Join(pathParts[1:], "/"), ".git")
-				}
-			} else {
-				return nil, fmt.Errorf("invalid repository path in SSH URL")
+			if err := parseSSHRepositoryPath(info, matches[2]); err != nil {
+				return nil, err
 			}
 		} else {
 			return nil, fmt.Errorf("unsupported URL format: %s", remoteURL)
@@ -86,6 +89,23 @@ func parseRemoteURL(remoteURL string) (*RemoteInfo, error) {
 	info.Platform = detectPlatform(info.Host)
 
 	return info, nil
+}
+
+func parseSSHRepositoryPath(info *RemoteInfo, remotePath string) error {
+	pathParts := strings.Split(strings.Trim(remotePath, "/"), "/")
+	if len(pathParts) < 2 {
+		return fmt.Errorf("invalid repository path in SSH URL")
+	}
+
+	if strings.Contains(strings.ToLower(info.Host), "gitlab") && len(pathParts) > 2 {
+		info.Owner = strings.Join(pathParts[:len(pathParts)-1], "/")
+		info.Repo = strings.TrimSuffix(pathParts[len(pathParts)-1], ".git")
+		return nil
+	}
+
+	info.Owner = pathParts[0]
+	info.Repo = strings.TrimSuffix(strings.Join(pathParts[1:], "/"), ".git")
+	return nil
 }
 
 // detectPlatform identifies the git platform from the host
