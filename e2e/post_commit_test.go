@@ -91,8 +91,8 @@ var _ = Describe("Push behavior", func() {
 			repository := newRepository()
 			bareRemote := newBareRemote(repository.GlobalConfig)
 			repository.git("remote", "add", "origin", bareRemote)
-			repository.git("push", "--set-upstream", "origin", "main")
-			repository.git("remote", "set-head", "origin", "main")
+			repository.git("push", "--set-upstream", "origin", "master")
+			repository.git("remote", "set-head", "origin", "master")
 			repository.git("remote", "set-url", "origin", hostedURL)
 			repository.git("config", "remote.origin.pushurl", bareRemote)
 			branch := "feature/APP-42-review-link"
@@ -125,7 +125,7 @@ var _ = Describe("Push behavior", func() {
 		Entry(
 			"for GitHub",
 			"https://github.example.test/acme/widgets.git",
-			"https://github.example.test/acme/widgets/compare/main..."+url.QueryEscape(
+			"https://github.example.test/acme/widgets/compare/master..."+url.QueryEscape(
 				"feature/APP-42-review-link",
 			)+"?expand=1",
 		),
@@ -135,7 +135,7 @@ var _ = Describe("Push behavior", func() {
 			"https://gitlab.example.test/acme/platform/widgets/-/merge_requests/new?"+
 				url.Values{
 					"merge_request[source_branch]": {"feature/APP-42-review-link"},
-					"merge_request[target_branch]": {"main"},
+					"merge_request[target_branch]": {"master"},
 				}.Encode(),
 		),
 	)

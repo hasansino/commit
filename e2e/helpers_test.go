@@ -224,7 +224,7 @@ func newRepositoryWithInitialCommit(initialCommit bool) *gitRepository {
 	Expect(os.WriteFile(globalConfig, nil, 0o600)).To(Succeed())
 
 	repository := &gitRepository{Path: repositoryPath, GlobalConfig: globalConfig}
-	repository.git("init", "--initial-branch=main")
+	repository.git("init", "--initial-branch=master")
 	repository.git("config", "user.name", "E2E User")
 	repository.git("config", "user.email", "e2e@example.test")
 	repository.git("config", "commit.gpgsign", "false")
@@ -330,7 +330,7 @@ func newBareRemote(globalConfig string) string {
 	path := filepath.Join(GinkgoT().TempDir(), "remote.git")
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
-	command := exec.CommandContext(ctx, "git", "init", "--bare", "--initial-branch=main", path)
+	command := exec.CommandContext(ctx, "git", "init", "--bare", "--initial-branch=master", path)
 	command.Env = childEnvironment(runOptions{GlobalConfig: globalConfig})
 	output, err := command.CombinedOutput()
 	if ctx.Err() != nil {

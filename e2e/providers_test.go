@@ -48,7 +48,7 @@ var _ = Describe("AI provider boundaries", func() {
 			Expect(requests[0].Path).To(ContainSubstring(expected.Path))
 			Expect(requests[0].Header.Get(expected.Header)).To(Equal(expected.HeaderValue))
 			Expect(string(requests[0].Body)).To(ContainSubstring(expected.BodyFragment))
-			Expect(requests[0].Prompt).To(Equal("provider prompt: main | tracked.txt"))
+			Expect(requests[0].Prompt).To(Equal("provider prompt: master | tracked.txt"))
 			Expect(repository.head()).To(Equal(repository.InitialHead))
 		},
 		Entry("OpenAI", providerExpectation{

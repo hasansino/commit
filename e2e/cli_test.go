@@ -22,8 +22,8 @@ func createConflictingBranches(repository *gitRepository) string {
 	GinkgoHelper()
 	repository.git("switch", "-c", "operation")
 	operationCommit := commitTrackedChange(repository, "operation branch\n", "test: operation branch")
-	repository.git("switch", "main")
-	commitTrackedChange(repository, "main branch\n", "test: main branch")
+	repository.git("switch", "master")
+	commitTrackedChange(repository, "master branch\n", "test: master branch")
 	return operationCommit
 }
 
@@ -44,7 +44,7 @@ func prepareRebaseConflict(repository *gitRepository) {
 	GinkgoHelper()
 	createConflictingBranches(repository)
 	repository.git("switch", "operation")
-	expectGitConflict(repository, "rebase", "main")
+	expectGitConflict(repository, "rebase", "master")
 }
 
 func prepareCherryPickConflict(repository *gitRepository) {
@@ -145,7 +145,7 @@ var _ = Describe("CLI contract", func() {
 		Expect(repository.head()).To(Equal(repository.InitialHead))
 		requests := api.requestsFor(providerOpenAI)
 		Expect(requests).To(HaveLen(1))
-		Expect(requests[0].Prompt).To(Equal("env prompt: main | tracked.txt"))
+		Expect(requests[0].Prompt).To(Equal("env prompt: master | tracked.txt"))
 	})
 
 	It("gives command-line flags precedence over the environment", func(ctx SpecContext) {
