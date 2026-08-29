@@ -241,6 +241,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateManualMode handles input in manual entry mode
 func (m Model) updateManualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Printable input can arrive as multiple runes in one message. Handle it
+	// before comparing friendly key names so literal text such as "enter" or
+	// "backspace" is never mistaken for a control key.
+	if msg.Type == tea.KeyRunes {
+		m.manualInput += string(msg.Runes)
+		return m, nil
+	}
+
 	switch msg.String() {
 	case KeyInterrupt:
 		return m, tea.Quit
@@ -268,10 +276,6 @@ func (m Model) updateManualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case KeySpace:
 		m.manualInput += " "
-	default:
-		if msg.Type == tea.KeyRunes {
-			m.manualInput += string(msg.Runes)
-		}
 	}
 	return m, nil
 }

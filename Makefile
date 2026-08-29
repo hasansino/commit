@@ -2,7 +2,7 @@
 # │                    commit                    │
 # ╰─────────────────────----------------─────────╯
 
-.PHONY: help
+.PHONY: help test test-e2e test-all
 help: Makefile
 	@sed -n 's/^##//p' $< | awk 'BEGIN {FS = "|"}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
@@ -10,6 +10,8 @@ help: Makefile
 setup:
 	@go mod tidy -e && go mod download
 	@go install go.uber.org/mock/mockgen@latest
+	@go install github.com/onsi/ginkgo/v2
+	@go install github.com/onsi/gomega
 
 ## setup-release | install tools for release process
 setup-release:
@@ -21,10 +23,25 @@ setup-release:
 # │               General workflow               │
 # ╰─────────────────────----------------─────────╯
 
+## test | run unit and end-to-end tests
+test: test-unit test-e2e
+
 ## test | run unit tests
 # -count=1 is needed to prevent caching of test results.
-test:
-	@go test -count=1 -v -race $(shell go list ./... | grep -v './tests')
+test-unit:
+	@go test -count=1 -v -race $(shell go list ./... | grep -Ev '/(tests|e2e)($$|/)')
+
+## test-e2e | run black-box end-to-end tests
+test-e2e:
+	@go run github.com/onsi/ginkgo/v2/ginkgo \
+		--race \
+		--procs=4 \
+		--randomize-all \
+		--fail-on-pending \
+		--fail-on-empty \
+		--trace \
+		--timeout=5m \
+		./e2e
 
 ## build | build development version of binary
 build:

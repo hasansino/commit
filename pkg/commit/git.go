@@ -297,7 +297,7 @@ func (g *gitOperations) StageFiles(
 		return g.stageAllModified(worktree)
 	}
 
-	// If we have simple include patterns (glob-compatible) and no global patterns, try to use AddGlob
+	// Use the single-selector path when no other matcher needs to be combined.
 	if len(excludePatterns) == 0 && len(includePatterns) == 1 && len(globalPatterns) == 0 &&
 		isSimpleGlobPattern(includePatterns[0]) {
 		return g.stageWithGlob(worktree, includePatterns[0])
@@ -338,7 +338,8 @@ func (g *gitOperations) stageAllModified(worktree *git.Worktree) ([]string, erro
 	return modifiedFiles, nil
 }
 
-// Fast path: use glob patterns when possible
+// stageWithGlob handles a single basename glob while retaining gitignore-style
+// matching for files below the repository root.
 func (g *gitOperations) stageWithGlob(worktree *git.Worktree, pattern string) ([]string, error) {
 	// Get status first to return the list of staged files
 	status, err := worktree.Status()
@@ -346,13 +347,14 @@ func (g *gitOperations) stageWithGlob(worktree *git.Worktree, pattern string) ([
 		return nil, fmt.Errorf("failed to get status: %w", err)
 	}
 
+	matcher := newPathPatternMatcher([]string{pattern})
 	var matchingFiles []string
 	for file := range status {
 		fileStatus := status.File(file)
 		if fileStatus.Worktree == git.Unmodified {
 			continue
 		}
-		if matched, _ := filepath.Match(pattern, file); matched {
+		if matcher.Match(file) {
 			matchingFiles = append(matchingFiles, file)
 		}
 	}
@@ -361,9 +363,10 @@ func (g *gitOperations) stageWithGlob(worktree *git.Worktree, pattern string) ([
 		return []string{}, nil
 	}
 
-	err = worktree.AddGlob(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stage files with pattern %s: %w", pattern, err)
+	for _, file := range matchingFiles {
+		if _, err := worktree.Add(file); err != nil {
+			return nil, fmt.Errorf("failed to stage file %s: %w", file, err)
+		}
 	}
 
 	return matchingFiles, nil

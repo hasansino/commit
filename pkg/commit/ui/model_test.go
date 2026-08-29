@@ -96,6 +96,22 @@ func TestModelSuccessfulManualInputIsDone(t *testing.T) {
 	assertQuitCommand(t, cmd)
 }
 
+func TestModelManualInputTreatsFriendlyKeyNamesAsText(t *testing.T) {
+	model := newModel(nil, nil)
+	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+
+	for _, input := range []string{"enter", "backspace", "esc"} {
+		model, _ = updateModelWithKey(t, model, tea.KeyMsg{
+			Type:  tea.KeyRunes,
+			Runes: []rune(input),
+		})
+	}
+
+	if got, want := model.manualInput, "enterbackspaceesc"; got != want {
+		t.Fatalf("manualInput = %q, want %q", got, want)
+	}
+}
+
 func updateModelWithKey(t *testing.T, model Model, key tea.KeyMsg) (Model, tea.Cmd) {
 	t.Helper()
 

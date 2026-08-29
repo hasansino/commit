@@ -1,8 +1,6 @@
 ---
 
-name: unit-tests
-
-# Unit tests.
+name: e2e-tests
 
 on:
   workflow_dispatch:
@@ -29,13 +27,13 @@ on:
 permissions: {}
 
 jobs:
-  unit-tests:
-    name: unit-tests
+  e2e-tests:
+    name: e2e-tests
     runs-on: ${{ inputs.runs_on }}
     continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: 10
     permissions:
       contents: read
-    # ----
     steps:
       - name: 'Checkout repository'
         uses: actions/checkout@v5
@@ -45,7 +43,7 @@ jobs:
           go-version-file: 'go.mod'
       - name: 'Download Go modules'
         run: go mod download
-      - name: 'Run unit tests with race detector'
-        run: go list ./... | grep -Ev '/(tests|e2e)($|/)' | xargs go test -count=1 -v -race
+      - name: 'Run black-box end-to-end tests'
+        run: make test-e2e
         env:
           CGO_ENABLED: 1 # needed for -race
