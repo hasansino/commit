@@ -48,17 +48,6 @@ build:
 	@go build -gcflags="all=-N -l" -race -v -o ./build/commit .
 	@file -h ./build/commit && du -h ./build/commit && sha256sum ./build/commit && go tool buildid ./build/commit
 
-## image | build docker image
-# @see https://reproducible-builds.org/docs/source-date-epoch/
-image:
-	@export SOURCE_DATE_EPOCH=0 && \
-	docker buildx build --no-cache --platform linux/amd64,linux/arm64 \
-    --build-arg "GO_VERSION=$(shell grep '^go ' go.mod | awk '{print $$2}')" \
-    --build-arg "COMMIT_HASH=$(shell git rev-parse HEAD 2>/dev/null || echo '')" \
-    --build-arg "RELEASE_TAG=$(shell git describe --tags --abbrev=0 2>/dev/null || echo '')" \
-	-t ghcr.io/hasansino/commit:dev \
-	.
-
 ## generate | generate code for all modules
 # Side effects of this command should to be commited.
 generate:

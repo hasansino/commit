@@ -25,21 +25,6 @@ brew install commit
 go install github.com/hasansino/commit@latest
 ```
 
-### Docker
-
-```bash
-docker run --rm -it \
-  -v $(pwd):/repo \
-  -e GIT_CONFIG_COUNT=1 \
-  -e GIT_CONFIG_KEY_0=safe.directory \
-  -e GIT_CONFIG_VALUE_0=/repo \
-  -e OPENAI_API_KEY=AAA \
-  -e ANTHROPIC_API_KEY=BBB \
-  -e GEMINI_API_KEY=CCC \
-  -w /repo \
-  ghcr.io/hasansino/commit:dev
-```
-
 ### Download Binary
 
 Download the latest binary from the [releases page](https://github.com/hasansino/commit/releases).
