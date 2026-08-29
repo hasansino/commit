@@ -1,7 +1,9 @@
 package commit
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -275,6 +277,72 @@ func TestAIService_GenerateCommitMessages(t *testing.T) {
 
 	if messages["testprovider"] != "test commit message" {
 		t.Errorf("GenerateCommitMessages() = %q, want %q", messages["testprovider"], "test commit message")
+	}
+}
+
+func TestAIService_GenerateCommitMessages_LogsSuccessfulProviderDuration(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	provider := mocks.NewMockproviderAccessor(ctrl)
+	provider.EXPECT().Name().Return("testprovider").AnyTimes()
+	provider.EXPECT().Ask(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(context.Context, string) ([]string, error) {
+			time.Sleep(10 * time.Millisecond)
+			return []string{"test commit message"}, nil
+		},
+	)
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+		ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
+			if attr.Key == slog.TimeKey && attr.Value.Kind() == slog.KindTime {
+				return slog.Attr{}
+			}
+			return attr
+		},
+	}))
+	service := &aiService{
+		logger:  logger,
+		timeout: time.Second,
+		providers: map[string]providerAccessor{
+			"testprovider": provider,
+		},
+	}
+
+	_, err := service.GenerateCommitMessages(
+		context.Background(), "diff", "main", []string{"file.go"}, nil, "", false,
+	)
+	if err != nil {
+		t.Fatalf("GenerateCommitMessages() error = %v", err)
+	}
+
+	var completionLogs int
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("decode log record %q: %v", line, err)
+		}
+		if record[slog.MessageKey] != "Received response from provider" ||
+			record["provider"] != "testprovider" {
+			continue
+		}
+
+		completionLogs++
+		durationText, ok := record["time"].(string)
+		if !ok {
+			t.Fatalf("completion log time = %#v, want duration string", record["time"])
+		}
+		duration, err := time.ParseDuration(durationText)
+		if err != nil {
+			t.Fatalf("parse completion log time %q: %v", durationText, err)
+		}
+		if duration <= 0 {
+			t.Errorf("completion log time = %s, want a positive duration", duration)
+		}
+	}
+	if completionLogs != 1 {
+		t.Errorf("completion log count = %d, want 1; logs:\n%s", completionLogs, logs.String())
 	}
 }
 

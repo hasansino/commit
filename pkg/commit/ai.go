@@ -113,9 +113,10 @@ func (s *aiService) GenerateCommitMessages(
 			ctx, cancel := context.WithTimeout(ctx, s.timeout)
 			defer cancel()
 
-			now := time.Now()
+			started := time.Now()
 
 			messages, err := provider.Ask(ctx, prompt)
+			duration := time.Since(started)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
 					s.logger.ErrorContext(
@@ -127,7 +128,7 @@ func (s *aiService) GenerateCommitMessages(
 				resultChan <- providerResponse{
 					Name: provider.Name(),
 					Err:  err,
-					Time: time.Since(now),
+					Time: duration,
 				}
 				return
 			}
@@ -140,7 +141,7 @@ func (s *aiService) GenerateCommitMessages(
 				resultChan <- providerResponse{
 					Name: provider.Name(),
 					Err:  errors.New("no messages received from provider"),
-					Time: time.Since(now),
+					Time: duration,
 				}
 				return
 			}
@@ -155,7 +156,7 @@ func (s *aiService) GenerateCommitMessages(
 				resultChan <- providerResponse{
 					Name: provider.Name(),
 					Err:  err,
-					Time: time.Since(now),
+					Time: duration,
 				}
 				return
 			}
@@ -163,6 +164,7 @@ func (s *aiService) GenerateCommitMessages(
 			resultChan <- providerResponse{
 				Name:    provider.Name(),
 				Message: message,
+				Time:    duration,
 			}
 		}(ctx, provider)
 	}
