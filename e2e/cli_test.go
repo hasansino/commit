@@ -212,7 +212,8 @@ var _ = Describe("Repository preconditions", func() {
 		result := runCLI(ctx, GinkgoT().TempDir(), openAIOptions(api), "--auto", "--providers=openai")
 
 		Expect(result.ExitCode).To(Equal(1))
-		Expect(result.Output()).To(ContainSubstring("failed to open git repository"))
+		Expect(result.Output()).To(ContainSubstring("failed to initialize git operations"))
+		Expect(result.Output()).To(ContainSubstring("not a git repository"))
 		Expect(api.requestsFor(providerOpenAI)).To(BeEmpty())
 	})
 

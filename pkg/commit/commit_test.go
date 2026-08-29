@@ -1,6 +1,7 @@
 package commit
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/hasansino/commit/pkg/commit/mocks"
+	"github.com/hasansino/commit/pkg/commit/models"
 )
 
 func TestNewCommitService(t *testing.T) {
@@ -477,27 +479,28 @@ func TestService_ModuleIntegration(t *testing.T) {
 }
 
 func expectStagingSession(
-	git *MockgitOperationsAccessor,
+	git *mocks.MockgitOperationsAccessor,
 	files []string,
 	usingExisting bool,
 	finishErr error,
-) *stagingSession {
-	session := &stagingSession{files: files}
-	if !usingExisting {
-		session.rollbackIndex = &indexSnapshot{}
-	}
-	git.EXPECT().BeginStaging(gomock.Any(), gomock.Any(), gomock.Any()).Return(session, nil)
+) *models.StagingSessionState {
+	session := &models.StagingSessionState{Files: files, UsingExisting: usingExisting}
+	git.EXPECT().BeginStaging(
+		gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+	).Return(session, nil)
 	git.EXPECT().FinishStaging(session).Return(finishErr)
 	return session
 }
 
 func TestService_Execute(t *testing.T) {
+	commitFinalizationErr := errors.New("repository lock cleanup error")
 	tests := []struct {
 		name        string
 		settings    *Settings
-		setupMocks  func(*MockgitOperationsAccessor)
+		setupMocks  func(*mocks.MockgitOperationsAccessor)
 		aiAdapter   *simpleTestAdapter
 		wantErr     bool
+		wantErrIs   error
 		errContains string
 	}{
 		{
@@ -506,7 +509,7 @@ func TestService_Execute(t *testing.T) {
 				Timeout: 30 * time.Second,
 			},
 			aiAdapter:   &simpleTestAdapter{hasProviders: false},
-			setupMocks:  func(git *MockgitOperationsAccessor) {},
+			setupMocks:  func(git *mocks.MockgitOperationsAccessor) {},
 			wantErr:     true,
 			errContains: "no api keys found in environment",
 		},
@@ -516,8 +519,8 @@ func TestService_Execute(t *testing.T) {
 				Timeout: 30 * time.Second,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(false)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(false)
 			},
 			wantErr:     true,
 			errContains: "not a git repository",
@@ -528,11 +531,11 @@ func TestService_Execute(t *testing.T) {
 				Timeout: 30 * time.Second,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
-				git.EXPECT().BeginStaging(gomock.Any(), gomock.Any(), gomock.Any()).
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				git.EXPECT().BeginStaging(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(nil, errors.New("staging error"))
 			},
 			wantErr:     true,
@@ -544,41 +547,44 @@ func TestService_Execute(t *testing.T) {
 				Timeout: 30 * time.Second,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
 				expectStagingSession(git, []string{}, false, nil)
 			},
 			wantErr: false,
 		},
 		{
-			name: "staging rollback error is returned",
+			name: "staging finalization error is returned",
 			settings: &Settings{
 				Timeout: 30 * time.Second,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
-				expectStagingSession(git, []string{}, false, errors.New("restore error"))
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				expectStagingSession(git, []string{}, false, errors.New("cleanup error"))
 			},
 			wantErr:     true,
-			errContains: "failed to finalize staging: restore error",
+			errContains: "failed to finalize staging: cleanup error",
 		},
 		{
-			name: "empty diff",
+			name: "staged files remain authoritative when presentation diff is empty",
 			settings: &Settings{
 				Timeout: 30 * time.Second,
+				Auto:    true,
+				DryRun:  true,
 			},
-			aiAdapter: &simpleTestAdapter{hasProviders: true},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
-				expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("  ", nil)
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				session := expectStagingSession(git, []string{"file.go"}, false, nil)
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
 			},
 			wantErr: false,
 		},
@@ -588,13 +594,13 @@ func TestService_Execute(t *testing.T) {
 				Timeout: 30 * time.Second,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
-				expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("", errors.New("branch error"))
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				session := expectStagingSession(git, []string{"file.go"}, false, nil)
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("", errors.New("branch error"))
 			},
 			wantErr:     true,
 			errContains: "failed to get current branch",
@@ -605,13 +611,13 @@ func TestService_Execute(t *testing.T) {
 				Timeout: 30 * time.Second,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, genErr: errors.New("ai error")},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
-				expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				session := expectStagingSession(git, []string{"file.go"}, false, nil)
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
 			},
 			wantErr:     true,
 			errContains: "failed to generate suggestions",
@@ -623,13 +629,13 @@ func TestService_Execute(t *testing.T) {
 				Auto:    true,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: ""},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
-				expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				session := expectStagingSession(git, []string{"file.go"}, false, nil)
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
 			},
 			wantErr:     true,
 			errContains: "no valid suggestions available for auto-commit",
@@ -642,13 +648,13 @@ func TestService_Execute(t *testing.T) {
 				DryRun:  true,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
-				expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				session := expectStagingSession(git, []string{"file.go"}, false, nil)
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
 			},
 			wantErr: false,
 		},
@@ -660,48 +666,48 @@ func TestService_Execute(t *testing.T) {
 				DryRun:  false,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
 				session := expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil)
-				git.EXPECT().CreateCommit(session, "test commit").Return(errors.New("commit error"))
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
+				git.EXPECT().CreateCommit(gomock.Any(), session, "test commit").
+					Return(models.CommitResult{}, errors.New("commit error"))
 			},
 			wantErr:     true,
 			errContains: "failed to create commit",
 		},
 		{
-			name: "post-commit cleanup error does not trigger rollback",
+			name: "commit result is preserved when finalization fails",
 			settings: &Settings{
 				Timeout: 30 * time.Second,
 				Auto:    true,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
-				session := &stagingSession{
-					files:         []string{"file.go"},
-					rollbackIndex: &indexSnapshot{},
-				}
-				git.EXPECT().BeginStaging(gomock.Any(), gomock.Any(), gomock.Any()).
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				session := &models.StagingSessionState{Files: []string{"file.go"}}
+				createCommitCalled := false
+				git.EXPECT().BeginStaging(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(session, nil)
-				git.EXPECT().FinishStaging(gomock.Cond(func(got *stagingSession) bool {
-					return got == session && got.closed
+				git.EXPECT().FinishStaging(gomock.Cond(func(got *models.StagingSessionState) bool {
+					return got == session && createCommitCalled
 				})).Return(nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil)
-				git.EXPECT().CreateCommit(session, "test commit").
-					DoAndReturn(func(*stagingSession, string) error {
-						session.closed = true
-						return errors.New("repository lock cleanup error")
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
+				git.EXPECT().CreateCommit(gomock.Any(), session, "test commit").
+					DoAndReturn(func(context.Context, *models.StagingSessionState, string) (models.CommitResult, error) {
+						createCommitCalled = true
+						return models.CommitResult{Hash: "deadbeef", Message: "test commit"}, commitFinalizationErr
 					})
 			},
 			wantErr:     true,
-			errContains: "failed to create commit",
+			wantErrIs:   commitFinalizationErr,
+			errContains: "commit created but finalization failed",
 		},
 		{
 			name: "successful commit",
@@ -711,14 +717,15 @@ func TestService_Execute(t *testing.T) {
 				DryRun:  false,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
 				session := expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil)
-				git.EXPECT().CreateCommit(session, "test commit").Return(nil)
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
+				git.EXPECT().CreateCommit(gomock.Any(), session, "test commit").
+					Return(models.CommitResult{Message: "test commit"}, nil)
 			},
 			wantErr: false,
 		},
@@ -731,15 +738,16 @@ func TestService_Execute(t *testing.T) {
 				Push:    true,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
 				session := expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil)
-				git.EXPECT().CreateCommit(session, "test commit").Return(nil)
-				git.EXPECT().Push().Return("https://github.com/user/repo/pull/new", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
+				git.EXPECT().CreateCommit(gomock.Any(), session, "test commit").
+					Return(models.CommitResult{Message: "test commit"}, nil)
+				git.EXPECT().Push(gomock.Any()).Return("https://github.com/user/repo/pull/new", nil)
 			},
 			wantErr: false,
 		},
@@ -752,15 +760,16 @@ func TestService_Execute(t *testing.T) {
 				Push:    true,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
 				session := expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil)
-				git.EXPECT().CreateCommit(session, "test commit").Return(nil)
-				git.EXPECT().Push().Return("", errors.New("push error"))
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
+				git.EXPECT().CreateCommit(gomock.Any(), session, "test commit").
+					Return(models.CommitResult{Message: "test commit"}, nil)
+				git.EXPECT().Push(gomock.Any()).Return("", errors.New("push error"))
 			},
 			wantErr:     true,
 			errContains: "failed to push",
@@ -774,17 +783,18 @@ func TestService_Execute(t *testing.T) {
 				Tag:     "patch",
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
 				session := expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil)
-				git.EXPECT().CreateCommit(session, "test commit").Return(nil)
-				git.EXPECT().GetLatestTag().Return("v1.0.0", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
+				git.EXPECT().CreateCommit(gomock.Any(), session, "test commit").
+					Return(models.CommitResult{Message: "commit-msg hook output"}, nil)
+				git.EXPECT().GetLatestTag(gomock.Any()).Return("v1.0.0", nil)
 				git.EXPECT().IncrementVersion("v1.0.0", "patch").Return("v1.0.1", nil)
-				git.EXPECT().CreateTag("v1.0.1", "test commit").Return(nil)
+				git.EXPECT().CreateTag(gomock.Any(), "v1.0.1", "commit-msg hook output").Return(nil)
 			},
 			wantErr: false,
 		},
@@ -798,19 +808,20 @@ func TestService_Execute(t *testing.T) {
 				Push:    true,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
-			setupMocks: func(git *MockgitOperationsAccessor) {
-				git.EXPECT().IsGitRepository().Return(true)
-				git.EXPECT().GetRepoState().Return(RepoStateNormal, nil)
-				git.EXPECT().HasConflicts().Return(false, []string{}, nil)
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
 				session := expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any()).Return("diff content", nil)
-				git.EXPECT().GetCurrentBranch().Return("main", nil)
-				git.EXPECT().CreateCommit(session, "test commit").Return(nil)
-				git.EXPECT().Push().Return("", nil)
-				git.EXPECT().GetLatestTag().Return("v1.0.0", nil)
+				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
+				git.EXPECT().CreateCommit(gomock.Any(), session, "test commit").
+					Return(models.CommitResult{Message: "test commit"}, nil)
+				git.EXPECT().Push(gomock.Any()).Return("", nil)
+				git.EXPECT().GetLatestTag(gomock.Any()).Return("v1.0.0", nil)
 				git.EXPECT().IncrementVersion("v1.0.0", "minor").Return("v1.1.0", nil)
-				git.EXPECT().CreateTag("v1.1.0", "test commit").Return(nil)
-				git.EXPECT().PushTag("v1.1.0").Return(nil)
+				git.EXPECT().CreateTag(gomock.Any(), "v1.1.0", "test commit").Return(nil)
+				git.EXPECT().PushTag(gomock.Any(), "v1.1.0").Return(nil)
 			},
 			wantErr: false,
 		},
@@ -821,7 +832,7 @@ func TestService_Execute(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			mockGit := NewMockgitOperationsAccessor(ctrl)
+			mockGit := mocks.NewMockgitOperationsAccessor(ctrl)
 
 			service := &Service{
 				logger:    slog.New(slog.DiscardHandler),
@@ -840,6 +851,9 @@ func TestService_Execute(t *testing.T) {
 					t.Errorf("Execute() expected error but got none")
 					return
 				}
+				if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
+					t.Errorf("Execute() error = %v, want errors.Is(_, %v)", err, tt.wantErrIs)
+				}
 				if tt.errContains != "" && !containsString(err.Error(), tt.errContains) {
 					t.Errorf("Execute() error = %q, want to contain %q", err.Error(), tt.errContains)
 				}
@@ -850,4 +864,232 @@ func TestService_Execute(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestService_Execute_PropagatesContextAndUsesCommittedMessage(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	git := mocks.NewMockgitOperationsAccessor(ctrl)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	session := &models.StagingSessionState{Files: []string{"file.go"}}
+	const (
+		selectedMessage  = "selected message"
+		committedMessage = "message rewritten by commit-msg"
+	)
+
+	git.EXPECT().IsGitRepository(ctx).Return(true)
+	git.EXPECT().GetRepoState(ctx).Return(RepoStateNormal, nil)
+	git.EXPECT().HasConflicts(ctx).Return(false, nil, nil)
+	git.EXPECT().BeginStaging(ctx, nil, nil, false).Return(session, nil)
+	git.EXPECT().FinishStaging(session).Return(nil)
+	git.EXPECT().GetStagedDiff(ctx, session, 1<<20).Return("diff content", nil)
+	git.EXPECT().GetCurrentBranch(ctx).Return("main", nil)
+	git.EXPECT().CreateCommit(ctx, session, selectedMessage).
+		Return(models.CommitResult{Message: committedMessage}, nil)
+	git.EXPECT().Push(ctx).Return("", nil)
+	git.EXPECT().GetLatestTag(ctx).Return("v1.0.0", nil)
+	git.EXPECT().IncrementVersion("v1.0.0", "patch").Return("v1.0.1", nil)
+	git.EXPECT().CreateTag(ctx, "v1.0.1", committedMessage).Return(nil)
+	git.EXPECT().PushTag(ctx, "v1.0.1").Return(nil)
+
+	service := &Service{
+		logger: slog.New(slog.DiscardHandler),
+		settings: &Settings{
+			Auto:             true,
+			Push:             true,
+			Tag:              "patch",
+			MaxDiffSizeBytes: 1 << 20,
+		},
+		gitOps: git,
+		aiService: &simpleTestAdapter{
+			hasProviders: true,
+			commitMsg:    selectedMessage,
+		},
+	}
+
+	if err := service.Execute(ctx); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func TestService_Execute_CanceledImmediatelyBeforeCommit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	git := mocks.NewMockgitOperationsAccessor(ctrl)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	session := &models.StagingSessionState{Files: []string{"file.go"}}
+
+	git.EXPECT().IsGitRepository(ctx).Return(true)
+	git.EXPECT().GetRepoState(ctx).Return(RepoStateNormal, nil)
+	git.EXPECT().HasConflicts(ctx).Return(false, nil, nil)
+	git.EXPECT().BeginStaging(ctx, nil, nil, false).Return(session, nil)
+	git.EXPECT().FinishStaging(session).Return(nil)
+	git.EXPECT().GetStagedDiff(ctx, session, 1<<20).Return("diff content", nil)
+	git.EXPECT().GetCurrentBranch(ctx).Return("main", nil)
+
+	service := &Service{
+		logger: slog.New(slog.DiscardHandler),
+		settings: &Settings{
+			Auto:             true,
+			MaxDiffSizeBytes: 1 << 20,
+		},
+		gitOps: git,
+		aiService: &simpleTestAdapter{
+			hasProviders: true,
+			commitMsg:    "selected message",
+			beforeGenerate: func() error {
+				cancel()
+				return nil
+			},
+		},
+	}
+
+	err := service.Execute(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Execute() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestService_ProcessPostCommit_TagCreationOutcomes(t *testing.T) {
+	tests := []struct {
+		name      string
+		outcome   TagCreationOutcome
+		objectID  string
+		wantError string
+		wantLog   string
+	}{
+		{
+			name:      "created tag is reported as existing",
+			outcome:   TagCreationCreated,
+			objectID:  "deadbeef",
+			wantError: "tag v1.0.1 now exists",
+			wantLog:   "Tag exists after incomplete creation",
+		},
+		{
+			name:      "indeterminate tag requires inspection",
+			outcome:   TagCreationIndeterminate,
+			wantError: "tag v1.0.1 creation outcome requires inspection",
+			wantLog:   "Tag creation outcome requires inspection",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			git := mocks.NewMockgitOperationsAccessor(ctrl)
+			cause := errors.New("git tag exited after dispatch")
+			outcomeErr := &TagCreationOutcomeError{
+				TagRef:   "refs/tags/v1.0.1",
+				ObjectID: test.objectID,
+				Outcome:  test.outcome,
+				Cause:    cause,
+			}
+			git.EXPECT().GetLatestTag(gomock.Any()).Return("v1.0.0", nil)
+			git.EXPECT().IncrementVersion("v1.0.0", "patch").Return("v1.0.1", nil)
+			git.EXPECT().CreateTag(gomock.Any(), "v1.0.1", "committed message").
+				Return(outcomeErr)
+
+			var logs bytes.Buffer
+			service := &Service{
+				logger: slog.New(slog.NewTextHandler(&logs, nil)),
+				settings: &Settings{
+					Tag: "patch",
+				},
+				gitOps: git,
+			}
+			err := service.processPostCommit(context.Background(), "committed message")
+
+			var gotOutcome *TagCreationOutcomeError
+			if !errors.As(err, &gotOutcome) || gotOutcome != outcomeErr {
+				t.Fatalf(
+					"processPostCommit() error = %T %v, want original TagCreationOutcomeError",
+					err,
+					err,
+				)
+			}
+			if !errors.Is(err, cause) {
+				t.Fatalf("processPostCommit() error = %v, want wrapped cause", err)
+			}
+			if !containsString(err.Error(), test.wantError) {
+				t.Fatalf(
+					"processPostCommit() error = %q, want containing %q",
+					err.Error(),
+					test.wantError,
+				)
+			}
+			if containsString(err.Error(), "failed to create tag") {
+				t.Fatalf("tag outcome was described as a definite failure: %v", err)
+			}
+			if got := logs.String(); !containsString(got, test.wantLog) ||
+				containsString(got, "Failed to create tag") {
+				t.Fatalf("tag outcome log = %q, want neutral outcome message", got)
+			}
+		})
+	}
+}
+
+func TestService_ProcessPostCommit_CancellationGates(t *testing.T) {
+	t.Run("before push", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		git := mocks.NewMockgitOperationsAccessor(ctrl)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		service := &Service{
+			logger:   slog.New(slog.DiscardHandler),
+			settings: &Settings{Push: true},
+			gitOps:   git,
+		}
+		err := service.processPostCommit(ctx, "committed message")
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("processPostCommit() error = %v, want context.Canceled", err)
+		}
+	})
+
+	t.Run("after branch push before tag creation", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		git := mocks.NewMockgitOperationsAccessor(ctrl)
+		ctx, cancel := context.WithCancel(context.Background())
+
+		git.EXPECT().Push(ctx).DoAndReturn(func(context.Context) (string, error) {
+			cancel()
+			return "", nil
+		})
+
+		service := &Service{
+			logger:   slog.New(slog.DiscardHandler),
+			settings: &Settings{Push: true, Tag: "patch"},
+			gitOps:   git,
+		}
+		err := service.processPostCommit(ctx, "committed message")
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("processPostCommit() error = %v, want context.Canceled", err)
+		}
+	})
+
+	t.Run("after tag creation before tag push", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		git := mocks.NewMockgitOperationsAccessor(ctrl)
+		ctx, cancel := context.WithCancel(context.Background())
+
+		git.EXPECT().Push(ctx).Return("", nil)
+		git.EXPECT().GetLatestTag(ctx).Return("v1.0.0", nil)
+		git.EXPECT().IncrementVersion("v1.0.0", "patch").Return("v1.0.1", nil)
+		git.EXPECT().CreateTag(ctx, "v1.0.1", "committed message").
+			DoAndReturn(func(context.Context, string, string) error {
+				cancel()
+				return nil
+			})
+
+		service := &Service{
+			logger:   slog.New(slog.DiscardHandler),
+			settings: &Settings{Push: true, Tag: "patch"},
+			gitOps:   git,
+		}
+		err := service.processPostCommit(ctx, "committed message")
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("processPostCommit() error = %v, want context.Canceled", err)
+		}
+	})
 }

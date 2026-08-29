@@ -73,8 +73,10 @@ func parseRemoteURL(remoteURL string) (*RemoteInfo, error) {
 			return nil, err
 		}
 	} else {
-		// Handle SSH URLs (git@host:owner/repo.git or git@host:group/subgroup/repo.git)
-		sshPattern := regexp.MustCompile(`^(?:git@)?([^:/]+)[:/](.+?)(?:\.git)?$`)
+		// Handle SCP-style SSH URLs ([user@]host:owner/repo.git) and the
+		// existing host/owner/repo shorthand. The username is transport-only
+		// metadata and must not become part of the browser URL host.
+		sshPattern := regexp.MustCompile(`^(?:[^@:/]+@)?([^@:/]+)[:/](.+?)(?:\.git)?$`)
 		if matches := sshPattern.FindStringSubmatch(remoteURL); len(matches) == 3 {
 			info.Host = matches[1]
 			if err := parseSSHRepositoryPath(info, matches[2]); err != nil {

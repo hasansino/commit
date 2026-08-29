@@ -15,9 +15,24 @@ permissions:
   actions: read
 
 jobs:
+  unit-tests:
+    uses: ./.github/workflows/120-unit-tests.yaml
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: false
+
+  e2e-tests:
+    uses: ./.github/workflows/125-e2e-tests.yaml
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: false
+
   docker-build:
     name: docker-build
     uses: ./.github/workflows/140-docker-build.yaml
+    needs:
+      - unit-tests
+      - e2e-tests
     with:
       runs_on: ubuntu-latest
       continue_on_error: false

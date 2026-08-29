@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 )
 
 func TestStagingIntegration_UnbornBranchCanCreateFirstCommit(t *testing.T) {
+	ctx := context.Background()
 	repoPath := t.TempDir()
 	runStagingIntegrationGit(t, repoPath, nil, "init", "-q")
 	runStagingIntegrationGit(t, repoPath, nil, "config", "user.name", "Integration Test")
@@ -24,22 +26,26 @@ func TestStagingIntegration_UnbornBranchCanCreateFirstCommit(t *testing.T) {
 	writeStagingIntegrationFile(t, repoPath, "first.txt", "first commit\n")
 
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() on unborn branch error = %v", err)
 	}
-	assertStagingIntegrationPaths(t, session.files, []string{"first.txt"})
+	assertStagingIntegrationPaths(t, session.Files, []string{"first.txt"})
 
 	wantBranch := strings.TrimSpace(string(runStagingIntegrationGit(
 		t, repoPath, nil, "symbolic-ref", "--short", "HEAD",
 	)))
-	if got, err := gitOps.GetCurrentBranch(); err != nil || got != wantBranch {
+	if got, err := gitOps.GetCurrentBranch(ctx); err != nil || got != wantBranch {
 		_ = gitOps.FinishStaging(session)
 		t.Fatalf("GetCurrentBranch() = (%q, %v), want (%q, nil)", got, err, wantBranch)
 	}
-	if err := gitOps.CreateCommit(session, "first commit"); err != nil {
+	result, err := gitOps.CreateCommit(ctx, session, "first commit")
+	if err != nil {
 		_ = gitOps.FinishStaging(session)
 		t.Fatalf("CreateCommit() error = %v", err)
+	}
+	if result.Hash == "" || result.Message != "first commit" {
+		t.Fatalf("CreateCommit() result = %+v, want a hash and original message", result)
 	}
 	if err := gitOps.FinishStaging(session); err != nil {
 		t.Fatalf("FinishStaging() error = %v", err)
@@ -81,6 +87,7 @@ func TestStagingIntegration_ServiceCreatesFirstCommit(t *testing.T) {
 }
 
 func TestStagingIntegration_ExistingPartialStageIsCommittedExactly(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 
 	const (
@@ -106,6 +113,7 @@ func TestStagingIntegration_ExistingPartialStageIsCommittedExactly(t *testing.T)
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
 	session, err := gitOps.BeginStaging(
+		ctx,
 		[]string{"partial.txt"},
 		[]string{"other.txt"},
 		false,
@@ -113,20 +121,20 @@ func TestStagingIntegration_ExistingPartialStageIsCommittedExactly(t *testing.T)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	if !session.usesExistingStaging() {
+	if !session.UsesExistingStaging() {
 		t.Fatal("BeginStaging() usingExisting = false, want true")
 	}
-	assertStagingIntegrationPaths(t, session.files, []string{"partial.txt"})
+	assertStagingIntegrationPaths(t, session.Files, []string{"partial.txt"})
 	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
 		t.Fatal("BeginStaging() rewrote an existing selectively staged index")
 	}
 
-	if err := gitOps.CreateCommit(session, "commit only the selected hunk"); err != nil {
+	if _, err := gitOps.CreateCommit(ctx, session, "commit only the selected hunk"); err != nil {
 		_ = gitOps.FinishStaging(session)
 		t.Fatalf("CreateCommit() error = %v", err)
 	}
 	if err := gitOps.FinishStaging(session); err != nil {
-		t.Fatalf("FinishStaging(true) error = %v", err)
+		t.Fatalf("FinishStaging() error = %v", err)
 	}
 
 	if got := string(runStagingIntegrationGit(t, repoPath, nil, "show", "HEAD:partial.txt")); got != stagedPartial {
@@ -153,27 +161,31 @@ func TestStagingIntegration_ExistingPartialStageIsCommittedExactly(t *testing.T)
 	}
 }
 
-func TestStagingIntegration_DryRunRollbackRestoresIndexBytes(t *testing.T) {
+func TestStagingIntegration_DryRunLeavesRealIndexUnchanged(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "changed but not committed\n")
 	writeStagingIntegrationFile(t, repoPath, "untracked.txt", "new file\n")
 
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	if session.usesExistingStaging() {
+	if session.UsesExistingStaging() {
 		t.Fatal("BeginStaging() usingExisting = true, want false")
 	}
-	assertStagingIntegrationPaths(t, session.files, []string{"tracked.txt", "untracked.txt"})
+	assertStagingIntegrationPaths(t, session.Files, []string{"tracked.txt", "untracked.txt"})
+	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
+		t.Fatal("BeginStaging() changed the real index")
+	}
 
 	if err := gitOps.FinishStaging(session); err != nil {
-		t.Fatalf("FinishStaging(false) error = %v", err)
+		t.Fatalf("FinishStaging() error = %v", err)
 	}
 	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
-		t.Fatal("dry-run rollback did not restore the index byte-for-byte")
+		t.Fatal("FinishStaging() changed the real index")
 	}
 	if got := string(runStagingIntegrationGit(t, repoPath, nil, "diff", "--cached", "--name-only")); got != "" {
 		t.Fatalf("dry-run left paths staged: %q", got)
@@ -181,25 +193,27 @@ func TestStagingIntegration_DryRunRollbackRestoresIndexBytes(t *testing.T) {
 }
 
 func TestStagingIntegration_NoChangesReturnsClosedSession(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	if len(session.files) != 0 || !session.closed {
+	state := session
+	if len(session.Files) != 0 || !state.Closed {
 		t.Fatalf(
 			"empty staging session = {files:%q closed:%v}, want no files and closed",
-			session.files,
-			session.closed,
+			session.Files,
+			state.Closed,
 		)
 	}
 	if err := gitOps.FinishStaging(session); err != nil {
 		t.Fatalf("FinishStaging() error = %v", err)
 	}
-	if session.leaseHeld {
+	if state.LeaseHeld {
 		t.Fatal("FinishStaging() did not release the staging-session lease")
 	}
 	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
@@ -208,15 +222,16 @@ func TestStagingIntegration_NoChangesReturnsClosedSession(t *testing.T) {
 }
 
 func TestStagingIntegration_OverlappingSessionIsRejected(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "first session\n")
 
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	first, err := gitOps.BeginStaging(nil, nil, false)
+	first, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("first BeginStaging() error = %v", err)
 	}
-	if _, err := gitOps.BeginStaging(nil, nil, false); err == nil ||
+	if _, err := gitOps.BeginStaging(ctx, nil, nil, false); err == nil ||
 		!strings.Contains(err.Error(), "already active") {
 		_ = gitOps.FinishStaging(first)
 		t.Fatalf("overlapping BeginStaging() error = %v, want active-session rejection", err)
@@ -225,7 +240,7 @@ func TestStagingIntegration_OverlappingSessionIsRejected(t *testing.T) {
 		t.Fatalf("first FinishStaging() error = %v", err)
 	}
 
-	second, err := gitOps.BeginStaging(nil, nil, false)
+	second, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() after release error = %v", err)
 	}
@@ -234,159 +249,152 @@ func TestStagingIntegration_OverlappingSessionIsRejected(t *testing.T) {
 	}
 }
 
-func TestStagingIntegration_FailedFinishIsTerminal(t *testing.T) {
+func TestStagingIntegration_FinishRemovesPrivateIndexAndReleasesSession(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
-	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "failed rollback\n")
+	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "private session\n")
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	externalLock, err := acquireIndexLock(session.indexPath)
-	if err != nil {
-		_ = gitOps.FinishStaging(session)
-		t.Fatalf("acquireIndexLock() error = %v", err)
-	}
-
-	if err := gitOps.FinishStaging(session); err == nil {
-		_ = discardIndexLock(externalLock)
-		t.Fatal("FinishStaging() error = nil while index is locked")
-	}
-	if !session.closed || session.leaseHeld {
-		_ = discardIndexLock(externalLock)
-		t.Fatalf("failed finish did not consume session: closed=%v leaseHeld=%v", session.closed, session.leaseHeld)
+	state := session
+	privateIndexPath := state.PrivateIndexPath
+	if _, err := os.Stat(privateIndexPath); err != nil {
+		t.Fatalf("private index does not exist while session is open: %v", err)
 	}
 	if err := gitOps.FinishStaging(session); err != nil {
-		_ = discardIndexLock(externalLock)
+		t.Fatalf("FinishStaging() error = %v", err)
+	}
+	if !state.Closed || state.LeaseHeld {
+		t.Fatalf(
+			"finished session = {closed:%v leaseHeld:%v}, want closed and released",
+			state.Closed, state.LeaseHeld,
+		)
+	}
+	if _, err := os.Stat(privateIndexPath); !os.IsNotExist(err) {
+		t.Fatalf("private index still exists after FinishStaging(): %v", err)
+	}
+	if err := gitOps.FinishStaging(session); err != nil {
 		t.Fatalf("second FinishStaging() error = %v, want terminal no-op", err)
 	}
-	if err := discardIndexLock(externalLock); err != nil {
-		t.Fatalf("discardIndexLock() error = %v", err)
-	}
-	if got := stagingIntegrationIndexBytes(t, repoPath); bytes.Equal(got, indexBefore) {
-		t.Fatal("failed rollback unexpectedly reported failure after restoring the index")
+	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
+		t.Fatal("finishing a private session changed the real index")
 	}
 
-	next, err := gitOps.BeginStaging(nil, nil, false)
+	next, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
-		t.Fatalf("BeginStaging() after failed finish error = %v", err)
+		t.Fatalf("BeginStaging() after FinishStaging() error = %v", err)
 	}
 	if err := gitOps.FinishStaging(next); err != nil {
 		t.Fatalf("final FinishStaging() error = %v", err)
 	}
 }
 
-func TestStagingIntegration_FinishErrorDoesNotPoisonService(t *testing.T) {
+func TestStagingIntegration_PrivateSessionIsInvisibleToExternalCommit(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
-	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "service cleanup failure\n")
+	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "speculative tracked change\n")
+	writeStagingIntegrationFile(t, repoPath, "untracked.txt", "speculative untracked file\n")
+	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
+	headBefore := strings.TrimSpace(string(runStagingIntegrationGit(
+		t, repoPath, nil, "rev-parse", "HEAD",
+	)))
 
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	indexPath, err := gitOps.resolveIndexPath()
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
-		t.Fatalf("resolveIndexPath() error = %v", err)
-	}
-
-	var externalLock *os.File
-	adapter := &simpleTestAdapter{
-		hasProviders: true,
-		commitMsg:    "dry run",
-		beforeGenerate: func() error {
-			if externalLock != nil {
-				return nil
-			}
-			var lockErr error
-			externalLock, lockErr = acquireIndexLock(indexPath)
-			return lockErr
-		},
-	}
-	service := &Service{
-		logger: slog.New(slog.DiscardHandler),
-		settings: &Settings{
-			Auto:             true,
-			DryRun:           true,
-			MaxDiffSizeBytes: 1 << 20,
-		},
-		gitOps:    gitOps,
-		aiService: adapter,
+		t.Fatalf("BeginStaging() error = %v", err)
 	}
 	t.Cleanup(func() {
-		_ = discardIndexLock(externalLock)
+		_ = gitOps.FinishStaging(session)
 	})
-
-	err = service.Execute(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "temporary staged changes may remain") {
-		t.Fatalf("first Execute() error = %v, want incomplete-cleanup warning", err)
+	assertStagingIntegrationPaths(t, session.Files, []string{"tracked.txt", "untracked.txt"})
+	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
+		t.Fatal("BeginStaging() exposed speculative files through the real index")
 	}
-	if err := discardIndexLock(externalLock); err != nil {
-		t.Fatalf("discardIndexLock() error = %v", err)
+	if got := runStagingIntegrationGit(t, repoPath, nil, "diff", "--cached", "--name-only"); len(got) != 0 {
+		t.Fatalf("ordinary Git sees speculative staged files: %q", got)
 	}
-	externalLock = nil
-	adapter.beforeGenerate = nil
-
-	if err := service.Execute(context.Background()); err != nil {
-		t.Fatalf("second Execute() after cleanup failure error = %v", err)
+	output, commitErr := runStagingIntegrationGitError(t, repoPath, nil, "commit", "-m", "external commit")
+	if commitErr == nil {
+		t.Fatalf("ordinary git commit consumed speculative files:\n%s", output)
+	}
+	if got := strings.TrimSpace(string(runStagingIntegrationGit(
+		t, repoPath, nil, "rev-parse", "HEAD",
+	))); got != headBefore {
+		t.Fatalf("external commit changed HEAD to %s, want %s", got, headBefore)
+	}
+	diff, err := gitOps.GetStagedDiff(ctx, session, 1<<20)
+	if err != nil || strings.TrimSpace(diff) == "" {
+		t.Fatalf("private GetStagedDiff() = (%q, %v), want speculative diff", diff, err)
+	}
+	if err := gitOps.FinishStaging(session); err != nil {
+		t.Fatalf("FinishStaging() error = %v", err)
 	}
 }
 
-func TestStagingIntegration_FailedCommitRollbackRestoresIndexBytes(t *testing.T) {
+func TestStagingIntegration_FailedCommitLeavesRealIndexUnchanged(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "changed before failed commit\n")
-	// A repository-local empty value shadows any global identity and makes both
-	// go-git and native Git reject commit creation deterministically.
+	// A repository-local empty value shadows any global identity and makes
+	// native Git reject commit creation deterministically.
 	runStagingIntegrationGit(t, repoPath, nil, "config", "user.name", "")
 
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	if session.usesExistingStaging() {
+	if session.UsesExistingStaging() {
 		t.Fatal("BeginStaging() usingExisting = true, want false")
 	}
-	if err := gitOps.CreateCommit(session, "this commit must fail"); err == nil {
+	if _, err := gitOps.CreateCommit(ctx, session, "this commit must fail"); err == nil {
 		_ = gitOps.FinishStaging(session)
 		t.Fatal("CreateCommit() error = nil, want failure")
 	}
 	if err := gitOps.FinishStaging(session); err != nil {
-		t.Fatalf("FinishStaging(false) error = %v", err)
+		t.Fatalf("FinishStaging() error = %v", err)
 	}
 
 	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
-		t.Fatal("failed-commit rollback did not restore the index byte-for-byte")
+		t.Fatal("failed commit changed the real index")
 	}
 	if got := string(runStagingIntegrationGit(t, repoPath, nil, "show", "HEAD:tracked.txt")); got != "base\n" {
 		t.Fatalf("failed commit changed HEAD: tracked.txt = %q", got)
 	}
 }
 
-func TestStagingIntegration_FinishTrueKeepsCommittedIndex(t *testing.T) {
+func TestStagingIntegration_SuccessfulCommitPromotesCommittedIndex(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "committed change\n")
 
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	if session.usesExistingStaging() {
+	if session.UsesExistingStaging() {
 		t.Fatal("BeginStaging() usingExisting = true, want false")
 	}
-	assertStagingIntegrationPaths(t, session.files, []string{"tracked.txt"})
-	if err := gitOps.CreateCommit(session, "keep the committed index"); err != nil {
+	assertStagingIntegrationPaths(t, session.Files, []string{"tracked.txt"})
+	if _, err := gitOps.CreateCommit(ctx, session, "keep the committed index"); err != nil {
 		_ = gitOps.FinishStaging(session)
 		t.Fatalf("CreateCommit() error = %v", err)
 	}
 	if err := gitOps.FinishStaging(session); err != nil {
-		t.Fatalf("FinishStaging(true) error = %v", err)
+		t.Fatalf("FinishStaging() error = %v", err)
 	}
 
 	indexAfter := stagingIntegrationIndexBytes(t, repoPath)
 	if bytes.Equal(indexAfter, indexBefore) {
-		t.Fatal("FinishStaging(true) restored the pre-commit index")
+		t.Fatal("successful commit did not promote its private index")
 	}
 	got := string(runStagingIntegrationGit(t, repoPath, nil, "show", "HEAD:tracked.txt"))
 	if got != "committed change\n" {
@@ -398,6 +406,7 @@ func TestStagingIntegration_FinishTrueKeepsCommittedIndex(t *testing.T) {
 }
 
 func TestStagingIntegration_IntentToAddWithStagedContentFailsClosed(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "actually staged\n")
 	runStagingIntegrationGit(t, repoPath, nil, "add", "--", "tracked.txt")
@@ -409,7 +418,7 @@ func TestStagingIntegration_IntentToAddWithStagedContentFailsClosed(t *testing.T
 
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	if _, err := gitOps.BeginStaging(nil, nil, false); err == nil {
+	if _, err := gitOps.BeginStaging(ctx, nil, nil, false); err == nil {
 		t.Fatal("BeginStaging() error = nil with intent-to-add plus staged content")
 	}
 	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
@@ -423,13 +432,14 @@ func TestStagingIntegration_IntentToAddWithStagedContentFailsClosed(t *testing.T
 }
 
 func TestStagingIntegration_IntentToAddOnlyFailsClosed(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	writeStagingIntegrationFile(t, repoPath, "intent.txt", "intent-to-add content\n")
 	runStagingIntegrationGit(t, repoPath, nil, "add", "-N", "--", "intent.txt")
 
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	if _, err := gitOps.BeginStaging(nil, nil, false); err == nil ||
+	if _, err := gitOps.BeginStaging(ctx, nil, nil, false); err == nil ||
 		!strings.Contains(err.Error(), "intent-to-add") {
 		t.Fatalf("BeginStaging() error = %v, want intent-to-add rejection", err)
 	}
@@ -439,6 +449,7 @@ func TestStagingIntegration_IntentToAddOnlyFailsClosed(t *testing.T) {
 }
 
 func TestStagingIntegration_LinkedWorktreeUsesItsOwnIndex(t *testing.T) {
+	ctx := context.Background()
 	mainRepoPath := newStagingIntegrationRepo(t)
 	linkedPath := filepath.Join(t.TempDir(), "linked")
 	runStagingIntegrationGit(
@@ -452,31 +463,31 @@ func TestStagingIntegration_LinkedWorktreeUsesItsOwnIndex(t *testing.T) {
 	writeStagingIntegrationFile(t, linkedPath, "tracked.txt", "linked worktree commit\n")
 	linkedIndexBefore := stagingIntegrationIndexBytes(t, linkedPath)
 	gitOps := newStagingIntegrationGitOperations(t, linkedPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	if session.usesExistingStaging() {
+	if session.UsesExistingStaging() {
 		t.Fatal("linked BeginStaging() saw the main worktree's staged index")
 	}
-	assertStagingIntegrationPaths(t, session.files, []string{"tracked.txt"})
+	assertStagingIntegrationPaths(t, session.Files, []string{"tracked.txt"})
 	if got := stagingIntegrationIndexBytes(t, mainRepoPath); !bytes.Equal(got, mainIndexBefore) {
 		_ = gitOps.FinishStaging(session)
 		t.Fatal("linked-worktree staging changed the main worktree index")
 	}
-	if got := stagingIntegrationIndexBytes(t, linkedPath); bytes.Equal(got, linkedIndexBefore) {
+	if got := stagingIntegrationIndexBytes(t, linkedPath); !bytes.Equal(got, linkedIndexBefore) {
 		_ = gitOps.FinishStaging(session)
-		t.Fatal("linked-worktree staging did not update its own index")
+		t.Fatal("linked-worktree private staging changed its real index")
 	}
 	if err := gitOps.FinishStaging(session); err != nil {
-		t.Fatalf("FinishStaging(false) error = %v", err)
+		t.Fatalf("FinishStaging() error = %v", err)
 	}
 
 	if got := stagingIntegrationIndexBytes(t, mainRepoPath); !bytes.Equal(got, mainIndexBefore) {
 		t.Fatal("linked-worktree session changed the main worktree index")
 	}
 	if got := stagingIntegrationIndexBytes(t, linkedPath); !bytes.Equal(got, linkedIndexBefore) {
-		t.Fatal("linked-worktree rollback did not restore its own index")
+		t.Fatal("FinishStaging() changed the linked worktree's real index")
 	}
 	assertStagingIntegrationPaths(
 		t,
@@ -486,11 +497,11 @@ func TestStagingIntegration_LinkedWorktreeUsesItsOwnIndex(t *testing.T) {
 		[]string{"main-only.txt"},
 	)
 
-	commitSession, err := gitOps.BeginStaging(nil, nil, false)
+	commitSession, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("second linked BeginStaging() error = %v", err)
 	}
-	if err := gitOps.CreateCommit(commitSession, "commit in linked worktree"); err != nil {
+	if _, err := gitOps.CreateCommit(ctx, commitSession, "commit in linked worktree"); err != nil {
 		_ = gitOps.FinishStaging(commitSession)
 		t.Fatalf("linked CreateCommit() error = %v", err)
 	}
@@ -508,11 +519,44 @@ func TestStagingIntegration_LinkedWorktreeUsesItsOwnIndex(t *testing.T) {
 		t.Fatal("linked commit changed the main worktree index")
 	}
 	if got := readStagingIntegrationFile(t, linkedPath, "tracked.txt"); got != "linked worktree commit\n" {
-		t.Fatalf("linked working tree was changed by rollback: tracked.txt = %q", got)
+		t.Fatalf("linked working tree was changed by finalization: tracked.txt = %q", got)
 	}
 }
 
+func TestStagingIntegration_LinkedWorktreeHonorsInfoExclude(t *testing.T) {
+	ctx := context.Background()
+	mainRepoPath := newStagingIntegrationRepo(t)
+	linkedPath := filepath.Join(t.TempDir(), "linked")
+	runStagingIntegrationGit(
+		t, mainRepoPath, nil, "worktree", "add", "-q", "-b", "info-exclude-linked", linkedPath,
+	)
+
+	excludePath := strings.TrimSpace(string(runStagingIntegrationGit(
+		t, linkedPath, nil, "rev-parse", "--git-path", "info/exclude",
+	)))
+	if !filepath.IsAbs(excludePath) {
+		excludePath = filepath.Join(linkedPath, excludePath)
+	}
+	if err := os.MkdirAll(filepath.Dir(excludePath), 0o755); err != nil {
+		t.Fatalf("create info/exclude directory: %v", err)
+	}
+	if err := os.WriteFile(excludePath, []byte("local-secret.env\n"), 0o600); err != nil {
+		t.Fatalf("write linked-worktree info/exclude: %v", err)
+	}
+	writeStagingIntegrationFile(t, linkedPath, "local-secret.env", "do not stage\n")
+	writeStagingIntegrationFile(t, linkedPath, "visible.txt", "stage this\n")
+
+	gitOps := newStagingIntegrationGitOperations(t, linkedPath)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
+	if err != nil {
+		t.Fatalf("BeginStaging() error = %v", err)
+	}
+	defer func() { _ = gitOps.FinishStaging(session) }()
+	assertStagingIntegrationPaths(t, session.Files, []string{"visible.txt"})
+}
+
 func TestStagingIntegration_InvocationFromSubdirectoryUsesRepositoryRoot(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	subdirectory := filepath.Join(repoPath, "nested", "directory")
 	if err := os.MkdirAll(subdirectory, 0o755); err != nil {
@@ -522,16 +566,16 @@ func TestStagingIntegration_InvocationFromSubdirectoryUsesRepositoryRoot(t *test
 
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, subdirectory)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	if session.usesExistingStaging() {
+	if session.UsesExistingStaging() {
 		t.Fatal("BeginStaging() usingExisting = true, want false")
 	}
-	assertStagingIntegrationPaths(t, session.files, []string{"tracked.txt"})
+	assertStagingIntegrationPaths(t, session.Files, []string{"tracked.txt"})
 	if err := gitOps.FinishStaging(session); err != nil {
-		t.Fatalf("FinishStaging(false) error = %v", err)
+		t.Fatalf("FinishStaging() error = %v", err)
 	}
 	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
 		t.Fatal("subdirectory invocation did not restore the repository-root index")
@@ -539,6 +583,7 @@ func TestStagingIntegration_InvocationFromSubdirectoryUsesRepositoryRoot(t *test
 }
 
 func TestStagingIntegration_PackedNestedBranchCanRollbackAndCommit(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	runStagingIntegrationGit(t, repoPath, nil, "checkout", "-q", "-b", "feature/nested")
 	runStagingIntegrationGit(t, repoPath, nil, "pack-refs", "--all", "--prune")
@@ -546,28 +591,28 @@ func TestStagingIntegration_PackedNestedBranchCanRollbackAndCommit(t *testing.T)
 
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	rollbackSession, err := gitOps.BeginStaging(nil, nil, false)
+	cleanupSession, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	if err := gitOps.FinishStaging(rollbackSession); err != nil {
-		t.Fatalf("FinishStaging(false) on packed nested branch error = %v", err)
+	if err := gitOps.FinishStaging(cleanupSession); err != nil {
+		t.Fatalf("FinishStaging() on packed nested branch error = %v", err)
 	}
 	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
-		t.Fatal("packed nested branch rollback did not restore the index")
+		t.Fatal("private session changed the packed nested branch index")
 	}
 
-	commitSession, err := gitOps.BeginStaging(nil, nil, false)
+	commitSession, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("second BeginStaging() error = %v", err)
 	}
-	err = gitOps.CreateCommit(commitSession, "commit on packed nested branch")
+	_, err = gitOps.CreateCommit(ctx, commitSession, "commit on packed nested branch")
 	if err != nil {
 		_ = gitOps.FinishStaging(commitSession)
 		t.Fatalf("CreateCommit() error = %v", err)
 	}
 	if err := gitOps.FinishStaging(commitSession); err != nil {
-		t.Fatalf("FinishStaging(true) error = %v", err)
+		t.Fatalf("FinishStaging() error = %v", err)
 	}
 	got := string(runStagingIntegrationGit(t, repoPath, nil, "show", "HEAD:tracked.txt"))
 	if got != "change on packed nested branch\n" {
@@ -576,6 +621,7 @@ func TestStagingIntegration_PackedNestedBranchCanRollbackAndCommit(t *testing.T)
 }
 
 func TestStagingIntegration_ExistingStagedUnusualFilenameIsPreserved(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	filename := ":(exclude)odd\nname\t-leading-π.txt"
 	writeStagingIntegrationFile(t, repoPath, filename, "unusual path\n")
@@ -583,15 +629,15 @@ func TestStagingIntegration_ExistingStagedUnusualFilenameIsPreserved(t *testing.
 
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	if !session.usesExistingStaging() {
+	if !session.UsesExistingStaging() {
 		t.Fatal("BeginStaging() usingExisting = false, want true")
 	}
-	assertStagingIntegrationPaths(t, session.files, []string{filename})
-	diff, err := gitOps.GetStagedDiff(1 << 20)
+	assertStagingIntegrationPaths(t, session.Files, []string{filename})
+	diff, err := gitOps.GetStagedDiff(ctx, session, 1<<20)
 	if err != nil {
 		t.Fatalf("GetStagedDiff() error = %v", err)
 	}
@@ -599,23 +645,31 @@ func TestStagingIntegration_ExistingStagedUnusualFilenameIsPreserved(t *testing.
 		t.Fatalf("GetStagedDiff() omitted the magic-looking filename: %q", diff)
 	}
 	if err := gitOps.FinishStaging(session); err != nil {
-		t.Fatalf("FinishStaging(false) error = %v", err)
+		t.Fatalf("FinishStaging() error = %v", err)
 	}
 	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
-		t.Fatal("existing unusual-path staging changed after rollback")
+		t.Fatal("existing unusual-path staging changed after private-session cleanup")
 	}
 }
 
 func TestStagingIntegration_GetStagedDiffRunsZeroContextOnce(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "changed content\n")
 	runStagingIntegrationGit(t, repoPath, nil, "add", "--", "tracked.txt")
 
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
+	if err != nil {
+		t.Fatalf("BeginStaging() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = gitOps.FinishStaging(session)
+	})
 	tracePath := filepath.Join(t.TempDir(), "git-trace.json")
 	t.Setenv("GIT_TRACE2_EVENT", tracePath)
 
-	diff, err := gitOps.GetStagedDiff(1)
+	diff, err := gitOps.GetStagedDiff(ctx, session, 1)
 	if err != nil {
 		t.Fatalf("GetStagedDiff() error = %v", err)
 	}
@@ -653,37 +707,65 @@ func TestStagingIntegration_GetStagedDiffRunsZeroContextOnce(t *testing.T) {
 	}
 }
 
-func TestStagingIntegration_MetadataOnlyIndexRewriteAllowsRollback(t *testing.T) {
+func TestStagingIntegration_MetadataOnlyRealIndexRewriteIsPreserved(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "speculatively staged\n")
 
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	preparedIndex := stagingIntegrationIndexBytes(t, repoPath)
+	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
+		t.Fatal("BeginStaging() changed the real index before metadata refresh")
+	}
 	runStagingIntegrationGit(t, repoPath, nil, "update-index", "--index-version=4")
-	if got := stagingIntegrationIndexBytes(t, repoPath); bytes.Equal(got, preparedIndex) {
+	rewrittenIndex := stagingIntegrationIndexBytes(t, repoPath)
+	if bytes.Equal(rewrittenIndex, indexBefore) {
 		t.Fatal("test setup did not rewrite the index encoding")
 	}
 
 	if err := gitOps.FinishStaging(session); err != nil {
-		t.Fatalf("FinishStaging(false) rejected a metadata-only rewrite: %v", err)
+		t.Fatalf("FinishStaging() rejected a metadata-only real-index rewrite: %v", err)
 	}
-	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, indexBefore) {
-		t.Fatal("rollback after metadata refresh did not restore the original index")
+	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, rewrittenIndex) {
+		t.Fatal("FinishStaging() overwrote the external metadata-only index rewrite")
 	}
 }
 
-func TestStagingIntegration_ConcurrentIndexChangeIsNotOverwritten(t *testing.T) {
+func TestStagingIntegration_MetadataOnlyIndexRewriteRejectsCommit(t *testing.T) {
+	ctx := context.Background()
+	repoPath := newStagingIntegrationRepo(t)
+	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "speculatively staged\n")
+
+	gitOps := newStagingIntegrationGitOperations(t, repoPath)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
+	if err != nil {
+		t.Fatalf("BeginStaging() error = %v", err)
+	}
+	t.Cleanup(func() { _ = gitOps.FinishStaging(session) })
+
+	runStagingIntegrationGit(t, repoPath, nil, "update-index", "--index-version=4")
+	rewrittenIndex := stagingIntegrationIndexBytes(t, repoPath)
+	if _, err := gitOps.CreateCommit(ctx, session, "must not overwrite index metadata"); err == nil ||
+		!strings.Contains(err.Error(), "git index changed") {
+		t.Fatalf("CreateCommit() error = %v, want concurrent index change", err)
+	}
+	if got := stagingIntegrationIndexBytes(t, repoPath); !bytes.Equal(got, rewrittenIndex) {
+		t.Fatal("CreateCommit() overwrote the external metadata-only index rewrite")
+	}
+}
+
+func TestStagingIntegration_ConcurrentSemanticIndexChangeRejectsCommitAndIsPreserved(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "staged by the session\n")
 
 	indexBefore := stagingIntegrationIndexBytes(t, repoPath)
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
@@ -694,26 +776,30 @@ func TestStagingIntegration_ConcurrentIndexChangeIsNotOverwritten(t *testing.T) 
 		t, repoPath, nil, "rev-parse", ":external.txt",
 	)))
 
-	err = gitOps.FinishStaging(session)
-	if err == nil || !strings.Contains(err.Error(), "git index changed") {
-		t.Fatalf("FinishStaging(false) error = %v, want concurrent index change", err)
+	if _, err = gitOps.CreateCommit(ctx, session, "must not consume external staging"); err == nil ||
+		!strings.Contains(err.Error(), "git index changed") {
+		t.Fatalf("CreateCommit() error = %v, want concurrent index change", err)
 	}
 	if got := stagingIntegrationIndexBytes(t, repoPath); bytes.Equal(got, indexBefore) {
-		t.Fatal("rollback overwrote the concurrently changed index")
+		t.Fatal("CreateCommit() overwrote the concurrently changed index")
 	}
 	if got := strings.TrimSpace(string(runStagingIntegrationGit(
 		t, repoPath, nil, "rev-parse", ":external.txt",
 	))); got != externalOID {
 		t.Fatalf("concurrent staged blob changed: got %s, want %s", got, externalOID)
 	}
+	if err := gitOps.FinishStaging(session); err != nil {
+		t.Fatalf("FinishStaging() after rejected commit error = %v", err)
+	}
 }
 
 func TestStagingIntegration_ConcurrentHeadChangeIsNotOverwritten(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "speculatively staged\n")
 
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, false)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
@@ -738,7 +824,7 @@ func TestStagingIntegration_ConcurrentHeadChangeIsNotOverwritten(t *testing.T) {
 	)))
 	runStagingIntegrationGit(t, repoPath, nil, "update-ref", headRef, newHead, oldHead)
 
-	err = gitOps.CreateCommit(session, "must not overwrite external HEAD")
+	_, err = gitOps.CreateCommit(ctx, session, "must not overwrite external HEAD")
 	if err == nil || !strings.Contains(err.Error(), "HEAD changed") {
 		t.Fatalf("CreateCommit() error = %v, want concurrent HEAD error", err)
 	}
@@ -748,11 +834,207 @@ func TestStagingIntegration_ConcurrentHeadChangeIsNotOverwritten(t *testing.T) {
 		t.Fatalf("CreateCommit() overwrote external HEAD: got %s, want %s", got, newHead)
 	}
 	if err := gitOps.FinishStaging(session); err != nil {
-		t.Fatalf("FinishStaging(false) after terminal HEAD conflict error = %v", err)
+		t.Fatalf("FinishStaging() after terminal HEAD conflict error = %v", err)
+	}
+}
+
+func TestStagingIntegration_NativeCleanFilterAndEOLNormalization(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fixture clean filter uses the POSIX sed utility")
+	}
+	ctx := context.Background()
+	repoPath := newStagingIntegrationRepo(t)
+	runStagingIntegrationGit(t, repoPath, nil, "config", "filter.scrub.clean", "sed s/raw/clean/g")
+	runStagingIntegrationGit(t, repoPath, nil, "config", "filter.scrub.required", "true")
+	writeStagingIntegrationFile(
+		t,
+		repoPath,
+		".gitattributes",
+		"filtered.dat filter=scrub text eol=lf\n",
+	)
+	writeStagingIntegrationFile(t, repoPath, "filtered.dat", "raw value\r\n")
+
+	gitOps := newStagingIntegrationGitOperations(t, repoPath)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
+	if err != nil {
+		t.Fatalf("BeginStaging() error = %v", err)
+	}
+	defer func() { _ = gitOps.FinishStaging(session) }()
+	assertStagingIntegrationPaths(t, session.Files, []string{".gitattributes", "filtered.dat"})
+
+	state := session
+	staged, err := gitOps.runGit(ctx, state.PrivateIndexPath, nil, "show", ":filtered.dat")
+	if err != nil {
+		t.Fatalf("read private-index blob: %v", err)
+	}
+	if got, want := string(staged), "clean value\n"; got != want {
+		t.Fatalf("private-index filtered.dat = %q, want native filtered content %q", got, want)
+	}
+
+	if _, err := gitOps.CreateCommit(ctx, session, "apply native clean conversion"); err != nil {
+		t.Fatalf("CreateCommit() error = %v", err)
+	}
+	if got, want := string(runStagingIntegrationGit(
+		t, repoPath, nil, "show", "HEAD:filtered.dat",
+	)), "clean value\n"; got != want {
+		t.Fatalf("committed filtered.dat = %q, want %q", got, want)
+	}
+}
+
+func TestStagingIntegration_NativeCommitRunsHooksAndWritesReflog(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fixture hooks use POSIX shell scripts")
+	}
+	ctx := context.Background()
+	repoPath := newStagingIntegrationRepo(t)
+	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "committed through hooks\n")
+
+	hooksPath := strings.TrimSpace(string(runStagingIntegrationGit(
+		t, repoPath, nil, "rev-parse", "--git-path", "hooks",
+	)))
+	if !filepath.IsAbs(hooksPath) {
+		hooksPath = filepath.Join(repoPath, hooksPath)
+	}
+	writeStagingIntegrationExecutable(
+		t,
+		filepath.Join(hooksPath, "pre-commit"),
+		"#!/bin/sh\nprintf 'pre-commit\\n' >> hook-order.log\n",
+	)
+	writeStagingIntegrationExecutable(
+		t,
+		filepath.Join(hooksPath, "commit-msg"),
+		"#!/bin/sh\nprintf 'commit-msg\\n' >> hook-order.log\nprintf 'rewritten by commit-msg\\n' > \"$1\"\n",
+	)
+	writeStagingIntegrationExecutable(
+		t,
+		filepath.Join(hooksPath, "post-commit"),
+		"#!/bin/sh\nprintf 'post-commit\\n' >> hook-order.log\n",
+	)
+
+	gitOps := newStagingIntegrationGitOperations(t, repoPath)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
+	if err != nil {
+		t.Fatalf("BeginStaging() error = %v", err)
+	}
+	defer func() { _ = gitOps.FinishStaging(session) }()
+	result, err := gitOps.CreateCommit(ctx, session, "selected message")
+	if err != nil {
+		t.Fatalf("CreateCommit() error = %v", err)
+	}
+	if result.Hash == "" || result.Message != "rewritten by commit-msg\n" {
+		t.Fatalf("CreateCommit() result = %+v, want rewritten message and commit hash", result)
+	}
+	if got, want := readStagingIntegrationFile(t, repoPath, "hook-order.log"),
+		"pre-commit\ncommit-msg\npost-commit\n"; got != want {
+		t.Fatalf("hook order = %q, want %q", got, want)
+	}
+
+	reflog := strings.TrimSpace(string(runStagingIntegrationGit(
+		t, repoPath, nil, "reflog", "-1", "--format=%H%x00%gs", "HEAD",
+	)))
+	parts := strings.SplitN(reflog, "\x00", 2)
+	if len(parts) != 2 || parts[0] != result.Hash || parts[1] != "commit: rewritten by commit-msg" {
+		t.Fatalf("HEAD reflog entry = %q, want %s and rewritten subject", reflog, result.Hash)
+	}
+}
+
+func TestStagingIntegration_WhitespaceOnlyChangesProducePromptDiff(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "trailing whitespace", content: "base \n"},
+		{name: "carriage return at EOL", content: "base\r\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			repoPath := newStagingIntegrationRepo(t)
+			writeStagingIntegrationFile(t, repoPath, "tracked.txt", tt.content)
+
+			gitOps := newStagingIntegrationGitOperations(t, repoPath)
+			session, err := gitOps.BeginStaging(ctx, nil, nil, false)
+			if err != nil {
+				t.Fatalf("BeginStaging() error = %v", err)
+			}
+			defer func() { _ = gitOps.FinishStaging(session) }()
+			diff, err := gitOps.GetStagedDiff(ctx, session, 1<<20)
+			if err != nil {
+				t.Fatalf("GetStagedDiff() error = %v", err)
+			}
+			if strings.TrimSpace(diff) == "" {
+				t.Fatal("GetStagedDiff() returned no prompt diff for a real staged change")
+			}
+		})
+	}
+}
+
+func TestStagingIntegration_BornRepositoryWithoutIndexUsesNativeEmptyIndexSemantics(t *testing.T) {
+	ctx := context.Background()
+	repoPath := newStagingIntegrationRepo(t)
+	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "changed after index removal\n")
+	writeStagingIntegrationFile(t, repoPath, "untracked.txt", "new after index removal\n")
+	indexPath := stagingIntegrationIndexPath(t, repoPath)
+	if err := os.Remove(indexPath); err != nil {
+		t.Fatalf("remove real index: %v", err)
+	}
+
+	gitOps := newStagingIntegrationGitOperations(t, repoPath)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
+	if err != nil {
+		t.Fatalf("BeginStaging() with missing real index error = %v", err)
+	}
+	defer func() { _ = gitOps.FinishStaging(session) }()
+	if !session.UsesExistingStaging() {
+		t.Fatal("missing real index was not treated as native existing staged deletions")
+	}
+	assertStagingIntegrationPaths(t, session.Files, []string{"tracked.txt"})
+	if _, err := os.Stat(indexPath); !os.IsNotExist(err) {
+		t.Fatalf("BeginStaging() recreated or changed the missing real index: %v", err)
+	}
+	if _, err := gitOps.CreateCommit(ctx, session, "commit with missing real index"); err != nil {
+		t.Fatalf("CreateCommit() error = %v", err)
+	}
+	if got := string(runStagingIntegrationGit(
+		t, repoPath, nil, "ls-tree", "-r", "--name-only", "HEAD",
+	)); got != "" {
+		t.Fatalf("HEAD tree = %q, want native empty-index deletion commit", got)
+	}
+	assertStagingIntegrationPaths(
+		t,
+		stagingIntegrationNULPaths(runStagingIntegrationGit(
+			t, repoPath, nil, "ls-files", "--others", "--exclude-standard", "-z", "--",
+		)),
+		[]string{"tracked.txt", "untracked.txt"},
+	)
+}
+
+func TestStagingIntegration_PrivateIndexModeIsOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not enforced on Windows")
+	}
+	ctx := context.Background()
+	repoPath := newStagingIntegrationRepo(t)
+	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "private index mode\n")
+
+	gitOps := newStagingIntegrationGitOperations(t, repoPath)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, false)
+	if err != nil {
+		t.Fatalf("BeginStaging() error = %v", err)
+	}
+	defer func() { _ = gitOps.FinishStaging(session) }()
+	state := session
+	info, err := os.Stat(state.PrivateIndexPath)
+	if err != nil {
+		t.Fatalf("stat private index: %v", err)
+	}
+	if got, want := info.Mode().Perm(), os.FileMode(0o600); got != want {
+		t.Fatalf("private index mode = %o, want %o", got, want)
 	}
 }
 
 func TestStagingIntegration_FilterPatternsMatchPathComponents(t *testing.T) {
+	ctx := context.Background()
 	newFixture := func(t *testing.T) (string, *gitOperations) {
 		t.Helper()
 		repoPath := newStagingIntegrationRepo(t)
@@ -774,11 +1056,11 @@ func TestStagingIntegration_FilterPatternsMatchPathComponents(t *testing.T) {
 
 	t.Run("exclude literals and directories", func(t *testing.T) {
 		repoPath, gitOps := newFixture(t)
-		session, err := gitOps.BeginStaging([]string{"log", "go", "build/"}, nil, false)
+		session, err := gitOps.BeginStaging(ctx, []string{"log", "go", "build/"}, nil, false)
 		if err != nil {
 			t.Fatalf("BeginStaging() error = %v", err)
 		}
-		assertStagingIntegrationPaths(t, session.files, []string{
+		assertStagingIntegrationPaths(t, session.Files, []string{
 			"api",
 			"dialog.go",
 			"main.go",
@@ -790,22 +1072,22 @@ func TestStagingIntegration_FilterPatternsMatchPathComponents(t *testing.T) {
 			t.Fatalf("FinishStaging() error = %v", err)
 		}
 		if got := string(runStagingIntegrationGit(t, repoPath, nil, "diff", "--cached", "--name-only")); got != "" {
-			t.Fatalf("rollback left paths staged: %q", got)
+			t.Fatalf("private session leaked paths into the real index: %q", got)
 		}
 	})
 
 	t.Run("include literal", func(t *testing.T) {
 		repoPath, gitOps := newFixture(t)
-		session, err := gitOps.BeginStaging(nil, []string{"api"}, false)
+		session, err := gitOps.BeginStaging(ctx, nil, []string{"api"}, false)
 		if err != nil {
 			t.Fatalf("BeginStaging() error = %v", err)
 		}
-		assertStagingIntegrationPaths(t, session.files, []string{"api"})
+		assertStagingIntegrationPaths(t, session.Files, []string{"api"})
 		if err := gitOps.FinishStaging(session); err != nil {
 			t.Fatalf("FinishStaging() error = %v", err)
 		}
 		if got := string(runStagingIntegrationGit(t, repoPath, nil, "diff", "--cached", "--name-only")); got != "" {
-			t.Fatalf("rollback left paths staged: %q", got)
+			t.Fatalf("private session leaked paths into the real index: %q", got)
 		}
 	})
 
@@ -824,11 +1106,11 @@ func TestStagingIntegration_FilterPatternsMatchPathComponents(t *testing.T) {
 			globalIgnorePath,
 		)
 
-		session, err := gitOps.BeginStaging(nil, nil, true)
+		session, err := gitOps.BeginStaging(ctx, nil, nil, true)
 		if err != nil {
 			t.Fatalf("BeginStaging() error = %v", err)
 		}
-		assertStagingIntegrationPaths(t, session.files, []string{
+		assertStagingIntegrationPaths(t, session.Files, []string{
 			"api",
 			"dialog.go",
 			"log",
@@ -841,13 +1123,13 @@ func TestStagingIntegration_FilterPatternsMatchPathComponents(t *testing.T) {
 			t.Fatalf("FinishStaging() error = %v", err)
 		}
 		if got := string(runStagingIntegrationGit(t, repoPath, nil, "diff", "--cached", "--name-only")); got != "" {
-			t.Fatalf("rollback left paths staged: %q", got)
+			t.Fatalf("private session leaked paths into the real index: %q", got)
 		}
 	})
 
 	t.Run("selector negation is rejected", func(t *testing.T) {
 		repoPath, gitOps := newFixture(t)
-		if _, err := gitOps.BeginStaging([]string{"!api"}, nil, false); err == nil ||
+		if _, err := gitOps.BeginStaging(ctx, []string{"!api"}, nil, false); err == nil ||
 			!strings.Contains(err.Error(), "positive selectors") {
 			t.Fatalf("BeginStaging() error = %v, want unsupported-negation error", err)
 		}
@@ -858,6 +1140,7 @@ func TestStagingIntegration_FilterPatternsMatchPathComponents(t *testing.T) {
 }
 
 func TestStagingIntegration_GlobalIgnoreNegation(t *testing.T) {
+	ctx := context.Background()
 	repoPath := newStagingIntegrationRepo(t)
 	files := map[string]string{
 		"error.log":          "ignored root log\n",
@@ -887,11 +1170,11 @@ func TestStagingIntegration_GlobalIgnoreNegation(t *testing.T) {
 	)
 
 	gitOps := newStagingIntegrationGitOperations(t, repoPath)
-	session, err := gitOps.BeginStaging(nil, nil, true)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, true)
 	if err != nil {
 		t.Fatalf("BeginStaging() error = %v", err)
 	}
-	assertStagingIntegrationPaths(t, session.files, []string{
+	assertStagingIntegrationPaths(t, session.Files, []string{
 		"generated/keep.txt",
 		"keep.log",
 		"main.go",
@@ -908,8 +1191,38 @@ func TestStagingIntegration_GlobalIgnoreNegation(t *testing.T) {
 		"--cached",
 		"--name-only",
 	)); got != "" {
-		t.Fatalf("rollback left paths staged: %q", got)
+		t.Fatalf("private session leaked paths into the real index: %q", got)
 	}
+}
+
+func TestStagingIntegration_DefaultXDGIgnoreAndTrackedIgnoredFile(t *testing.T) {
+	ctx := context.Background()
+	repoPath := newStagingIntegrationRepo(t)
+	xdgPath := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdgPath)
+	ignoreDirectory := filepath.Join(xdgPath, "git")
+	if err := os.MkdirAll(ignoreDirectory, 0o755); err != nil {
+		t.Fatalf("create XDG Git directory: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(ignoreDirectory, "ignore"),
+		[]byte("tracked.txt\nlocal-secret.env\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write XDG global ignore: %v", err)
+	}
+
+	writeStagingIntegrationFile(t, repoPath, "tracked.txt", "tracked changes remain eligible\n")
+	writeStagingIntegrationFile(t, repoPath, "local-secret.env", "globally ignored\n")
+	writeStagingIntegrationFile(t, repoPath, "visible.txt", "not ignored\n")
+
+	gitOps := newStagingIntegrationGitOperations(t, repoPath)
+	session, err := gitOps.BeginStaging(ctx, nil, nil, true)
+	if err != nil {
+		t.Fatalf("BeginStaging() error = %v", err)
+	}
+	defer func() { _ = gitOps.FinishStaging(session) }()
+	assertStagingIntegrationPaths(t, session.Files, []string{"tracked.txt", "visible.txt"})
 }
 
 func TestNewGitOperationsRejectsAlternateIndexEnvironment(t *testing.T) {
@@ -936,6 +1249,8 @@ func newStagingIntegrationRepo(t *testing.T) string {
 
 func newStagingIntegrationGitOperations(t *testing.T, repoPath string) *gitOperations {
 	t.Helper()
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	gitOps, err := newGitOperations(repoPath)
 	if err != nil {
 		t.Fatalf("newGitOperations(%q) error = %v", repoPath, err)
@@ -944,6 +1259,21 @@ func newStagingIntegrationGitOperations(t *testing.T, repoPath string) *gitOpera
 }
 
 func runStagingIntegrationGit(t *testing.T, repoPath string, stdin []byte, args ...string) []byte {
+	t.Helper()
+	output, err := runStagingIntegrationGitError(t, repoPath, stdin, args...)
+	if err != nil {
+		commandArgs := append([]string{"-C", repoPath}, args...)
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(commandArgs, " "), err, output)
+	}
+	return output
+}
+
+func runStagingIntegrationGitError(
+	t *testing.T,
+	repoPath string,
+	stdin []byte,
+	args ...string,
+) ([]byte, error) {
 	t.Helper()
 	commandArgs := append([]string{"-C", repoPath}, args...)
 	cmd := exec.Command("git", commandArgs...)
@@ -956,14 +1286,20 @@ func runStagingIntegrationGit(t *testing.T, repoPath string, stdin []byte, args 
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s failed: %v\n%s", strings.Join(commandArgs, " "), err, output)
-	}
-	return output
+	return cmd.CombinedOutput()
 }
 
 func stagingIntegrationIndexBytes(t *testing.T, repoPath string) []byte {
+	t.Helper()
+	indexPath := stagingIntegrationIndexPath(t, repoPath)
+	contents, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("read index %q: %v", indexPath, err)
+	}
+	return contents
+}
+
+func stagingIntegrationIndexPath(t *testing.T, repoPath string) string {
 	t.Helper()
 	indexPath := strings.TrimSpace(string(runStagingIntegrationGit(
 		t, repoPath, nil, "rev-parse", "--git-path", "index",
@@ -971,11 +1307,7 @@ func stagingIntegrationIndexBytes(t *testing.T, repoPath string) []byte {
 	if !filepath.IsAbs(indexPath) {
 		indexPath = filepath.Join(repoPath, indexPath)
 	}
-	contents, err := os.ReadFile(indexPath)
-	if err != nil {
-		t.Fatalf("read index %q: %v", indexPath, err)
-	}
-	return contents
+	return filepath.Clean(indexPath)
 }
 
 func writeStagingIntegrationFile(t *testing.T, repoPath, name, contents string) {
@@ -986,6 +1318,16 @@ func writeStagingIntegrationFile(t *testing.T, repoPath, name, contents string) 
 	}
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("write %q: %v", name, err)
+	}
+}
+
+func writeStagingIntegrationExecutable(t *testing.T, path, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create executable parent for %q: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o755); err != nil {
+		t.Fatalf("write executable %q: %v", path, err)
 	}
 }
 

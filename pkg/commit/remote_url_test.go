@@ -45,6 +45,17 @@ func TestParseRemoteURL(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:      "GitHub SCP-style SSH URL with custom user",
+			remoteURL: "deploy-user@github.com:owner/repo.git",
+			wantInfo: &RemoteInfo{
+				Platform: PlatformGitHub,
+				Host:     "github.com",
+				Owner:    "owner",
+				Repo:     "repo",
+			},
+			wantErr: false,
+		},
+		{
 			name:      "GitHub SSH URL with ssh://",
 			remoteURL: "ssh://git@github.com/owner/repo.git",
 			wantInfo: &RemoteInfo{
@@ -223,6 +234,19 @@ func TestSSHRemoteWithPortGeneratesMergeRequestURL(t *testing.T) {
 
 	got := generateMergeRequestURL(info, "feature-branch", "master")
 	want := "https://gitlab.co/group/repo/-/merge_requests/new?merge_request%5Bsource_branch%5D=feature-branch&merge_request%5Btarget_branch%5D=master"
+	if got != want {
+		t.Fatalf("generateMergeRequestURL() = %q, want %q", got, want)
+	}
+}
+
+func TestSCPStyleRemoteWithCustomUserGeneratesMergeRequestURL(t *testing.T) {
+	info, err := parseRemoteURL("deploy-user@github.com:owner/repo.git")
+	if err != nil {
+		t.Fatalf("parseRemoteURL() error = %v", err)
+	}
+
+	got := generateMergeRequestURL(info, "feature-branch", "master")
+	want := "https://github.com/owner/repo/compare/master...feature-branch?expand=1"
 	if got != want {
 		t.Fatalf("generateMergeRequestURL() = %q, want %q", got, want)
 	}

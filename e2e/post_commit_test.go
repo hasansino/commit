@@ -97,6 +97,7 @@ var _ = Describe("Push behavior", func() {
 			repository.git("config", "remote.origin.pushurl", bareRemote)
 			branch := "feature/APP-42-review-link"
 			repository.git("switch", "-c", branch)
+			repository.git("config", "push.default", "current")
 			repository.append("tracked.txt", "push and tag\n")
 			api := newFakeAI()
 			api.setReply(providerOpenAI, apiReply{Message: "feat(push): publish review branch"})

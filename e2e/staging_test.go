@@ -331,12 +331,13 @@ var _ = Describe("Staging and commit behavior", func() {
 			Expect(repository.head()).To(Equal(repository.InitialHead))
 		},
 		Entry("the author email is missing", func(repository *gitRepository) {
+			repository.git("config", "user.useConfigOnly", "true")
 			repository.git("config", "--unset", "user.email")
-		}, "git user.email not configured"),
+		}, "no email was given and auto-detection is disabled"),
 		Entry("signing is enabled without a key", func(repository *gitRepository) {
 			repository.git("config", "commit.gpgsign", "true")
 			_, _ = repository.tryGit("config", "--unset", "user.signingkey")
-		}, "commit.gpgsign=true but user.signingkey not configured"),
+		}, "failed to write commit object"),
 	)
 
 	It("returns successfully when selectors match no changes", func(ctx SpecContext) {

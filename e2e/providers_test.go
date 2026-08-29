@@ -279,10 +279,9 @@ var _ = Describe("Prompt construction", func() {
 		Expect([]byte(requests[0].Prompt)).To(HaveLen(128))
 	})
 
-	It("does not call a provider when the diff limit is zero", func(ctx SpecContext) {
+	It("commits staged state when the prompt diff limit is zero", func(ctx SpecContext) {
 		repository := newRepository()
 		repository.append("tracked.txt", "invisible diff\n")
-		beforeIndex := repository.indexBytes()
 		api := newFakeAI()
 		options := openAIOptions(api)
 		options.GlobalConfig = repository.GlobalConfig
@@ -297,9 +296,10 @@ var _ = Describe("Prompt construction", func() {
 		)
 
 		Expect(result.ExitCode).To(Equal(0))
-		Expect(result.Output()).To(ContainSubstring("No changes staged for commit"))
-		Expect(api.requestsFor(providerOpenAI)).To(BeEmpty())
-		Expect(repository.indexBytes()).To(Equal(beforeIndex))
-		Expect(repository.head()).To(Equal(repository.InitialHead))
+		Expect(result.Output()).To(ContainSubstring("Commit created"))
+		Expect(api.requestsFor(providerOpenAI)).To(HaveLen(1))
+		Expect(repository.head()).NotTo(Equal(repository.InitialHead))
+		Expect(repository.git("show", "HEAD:tracked.txt")).To(ContainSubstring("invisible diff"))
+		Expect(repository.git("diff", "--cached", "--name-only")).To(BeEmpty())
 	})
 })

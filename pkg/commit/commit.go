@@ -86,11 +86,11 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 		return fmt.Errorf("no api keys found in environment")
 	}
 
-	if !s.gitOps.IsGitRepository() {
+	if !s.gitOps.IsGitRepository(ctx) {
 		return fmt.Errorf("not a git repository")
 	}
 
-	repoStateStr, err := s.gitOps.GetRepoState()
+	repoStateStr, err := s.gitOps.GetRepoState(ctx)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to get repository state", "error", err)
 		return fmt.Errorf("failed to get repository state: %w", err)
@@ -101,7 +101,7 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 		return fmt.Errorf("repository is in %s state, cannot create commit", repoStateStr)
 	}
 
-	hasConflicts, _, err := s.gitOps.HasConflicts()
+	hasConflicts, _, err := s.gitOps.HasConflicts(ctx)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to check for conflicts", "error", err)
 		return fmt.Errorf("failed to check for conflicts: %w", err)
@@ -115,6 +115,7 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 	s.logger.DebugContext(ctx, "Preparing staged files...")
 
 	staging, err := s.gitOps.BeginStaging(
+		ctx,
 		s.settings.ExcludePatterns,
 		s.settings.IncludePatterns,
 		s.settings.UseGlobalGitignore,
@@ -126,20 +127,17 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 	if staging == nil {
 		return fmt.Errorf("failed to prepare staged files: staging session is nil")
 	}
-	stagedFiles := staging.files
+	stagedFiles := staging.Files
 
 	defer func() {
 		if err := s.gitOps.FinishStaging(staging); err != nil {
-			finishErr := fmt.Errorf(
-				"failed to finalize staging: %w; temporary staged changes may remain; inspect them with git diff --cached",
-				err,
-			)
+			finishErr := fmt.Errorf("failed to finalize staging: %w", err)
 			s.logger.ErrorContext(ctx, "Failed to finalize staging", "error", err)
 			retErr = errors.Join(retErr, finishErr)
 		}
 	}()
 
-	if staging.usesExistingStaging() &&
+	if staging.UsesExistingStaging() &&
 		(len(s.settings.ExcludePatterns) > 0 ||
 			len(s.settings.IncludePatterns) > 0) {
 		s.logger.WarnContext(
@@ -155,18 +153,13 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 
 	s.logger.DebugContext(ctx, "Getting staged diff...")
 
-	diff, err := s.gitOps.GetStagedDiff(s.settings.MaxDiffSizeBytes)
+	diff, err := s.gitOps.GetStagedDiff(ctx, staging, s.settings.MaxDiffSizeBytes)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to get staged diff", "error", err)
 		return fmt.Errorf("failed to get diff: %w", err)
 	}
 
-	if strings.TrimSpace(diff) == "" {
-		s.logger.WarnContext(ctx, "No changes staged for commit")
-		return nil
-	}
-
-	branch, err := s.gitOps.GetCurrentBranch()
+	branch, err := s.gitOps.GetCurrentBranch(ctx)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to get current branch", "error", err)
 		return fmt.Errorf("failed to get current branch: %w", err)
@@ -199,17 +192,37 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 		return nil
 	}
 
-	if err := s.gitOps.CreateCommit(staging, commitMessage); err != nil {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("commit canceled before creation: %w", err)
+	}
+
+	result, err := s.gitOps.CreateCommit(ctx, staging, commitMessage)
+	committedMessage := commitMessage
+	if result.Message != "" {
+		committedMessage = result.Message
+	}
+	if err != nil {
+		if result.Hash != "" {
+			s.logger.ErrorContext(
+				ctx,
+				"Commit created with finalization error",
+				"commit_message",
+				committedMessage,
+				"error",
+				err,
+			)
+			return fmt.Errorf("commit created but finalization failed: %w", err)
+		}
 		s.logger.ErrorContext(ctx, "Failed to create commit", "error", err)
 		return fmt.Errorf("failed to create commit: %w", err)
 	}
 
 	s.logger.InfoContext(
 		ctx, "Commit created",
-		"commit_message", commitMessage,
+		"commit_message", committedMessage,
 	)
 
-	return s.processPostCommit(ctx, commitMessage)
+	return s.processPostCommit(ctx, committedMessage)
 }
 
 // selectCommitMessage handles message selection and module transformations.
@@ -326,7 +339,10 @@ func (s *Service) selectCommitMessage(
 
 func (s *Service) processPostCommit(ctx context.Context, commitMessage string) error {
 	if s.settings.Push {
-		mrURL, err := s.gitOps.Push()
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("push canceled after commit: %w", err)
+		}
+		mrURL, err := s.gitOps.Push(ctx)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "Failed to push to remote", "error", err)
 			return fmt.Errorf("failed to push: %w", err)
@@ -339,7 +355,10 @@ func (s *Service) processPostCommit(ctx context.Context, commitMessage string) e
 	}
 
 	if s.settings.Tag != "" {
-		latestTag, err := s.gitOps.GetLatestTag()
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("tag creation canceled after commit: %w", err)
+		}
+		latestTag, err := s.gitOps.GetLatestTag(ctx)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "Failed to get latest tag", "error", err)
 			return fmt.Errorf("failed to get latest tag: %w", err)
@@ -357,7 +376,43 @@ func (s *Service) processPostCommit(ctx context.Context, commitMessage string) e
 			return fmt.Errorf("failed to increment version: %w", err)
 		}
 
-		if err := s.gitOps.CreateTag(newTag, commitMessage); err != nil {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("tag creation canceled after commit: %w", err)
+		}
+		if err := s.gitOps.CreateTag(ctx, newTag, commitMessage); err != nil {
+			var outcome *TagCreationOutcomeError
+			if errors.As(err, &outcome) {
+				if outcome.Outcome == TagCreationCreated {
+					s.logger.WarnContext(
+						ctx,
+						"Tag exists after incomplete creation",
+						"tag",
+						newTag,
+						"object_id",
+						outcome.ObjectID,
+						"error",
+						err,
+					)
+					return fmt.Errorf(
+						"tag %s now exists after creation did not complete cleanly; inspect it before continuing: %w",
+						newTag,
+						err,
+					)
+				}
+				s.logger.WarnContext(
+					ctx,
+					"Tag creation outcome requires inspection",
+					"tag",
+					newTag,
+					"error",
+					err,
+				)
+				return fmt.Errorf(
+					"tag %s creation outcome requires inspection: %w",
+					newTag,
+					err,
+				)
+			}
 			s.logger.ErrorContext(ctx, "Failed to create tag", "tag", newTag, "error", err)
 			return fmt.Errorf("failed to create tag %s: %w", newTag, err)
 		}
@@ -365,7 +420,10 @@ func (s *Service) processPostCommit(ctx context.Context, commitMessage string) e
 		s.logger.InfoContext(ctx, "Tag created", "tag", newTag)
 
 		if s.settings.Push {
-			if err := s.gitOps.PushTag(newTag); err != nil {
+			if err := ctx.Err(); err != nil {
+				return fmt.Errorf("tag push canceled after tag creation: %w", err)
+			}
+			if err := s.gitOps.PushTag(ctx, newTag); err != nil {
 				s.logger.ErrorContext(ctx, "Failed to push tag", "tag", newTag, "error", err)
 				return fmt.Errorf("failed to push tag %s: %w", newTag, err)
 			}

@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 	time "time"
 
+	models "github.com/hasansino/commit/pkg/commit/models"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -217,4 +218,220 @@ func (m *MockaiServiceAccessor) NumProviders() int {
 func (mr *MockaiServiceAccessorMockRecorder) NumProviders() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NumProviders", reflect.TypeOf((*MockaiServiceAccessor)(nil).NumProviders))
+}
+
+// MockgitOperationsAccessor is a mock of gitOperationsAccessor interface.
+type MockgitOperationsAccessor struct {
+	ctrl     *gomock.Controller
+	recorder *MockgitOperationsAccessorMockRecorder
+	isgomock struct{}
+}
+
+// MockgitOperationsAccessorMockRecorder is the mock recorder for MockgitOperationsAccessor.
+type MockgitOperationsAccessorMockRecorder struct {
+	mock *MockgitOperationsAccessor
+}
+
+// NewMockgitOperationsAccessor creates a new mock instance.
+func NewMockgitOperationsAccessor(ctrl *gomock.Controller) *MockgitOperationsAccessor {
+	mock := &MockgitOperationsAccessor{ctrl: ctrl}
+	mock.recorder = &MockgitOperationsAccessorMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockgitOperationsAccessor) EXPECT() *MockgitOperationsAccessorMockRecorder {
+	return m.recorder
+}
+
+// BeginStaging mocks base method.
+func (m *MockgitOperationsAccessor) BeginStaging(ctx context.Context, excludePatterns, includePatterns []string, useGlobalGitignore bool) (*models.StagingSessionState, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BeginStaging", ctx, excludePatterns, includePatterns, useGlobalGitignore)
+	ret0, _ := ret[0].(*models.StagingSessionState)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BeginStaging indicates an expected call of BeginStaging.
+func (mr *MockgitOperationsAccessorMockRecorder) BeginStaging(ctx, excludePatterns, includePatterns, useGlobalGitignore any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginStaging", reflect.TypeOf((*MockgitOperationsAccessor)(nil).BeginStaging), ctx, excludePatterns, includePatterns, useGlobalGitignore)
+}
+
+// CreateCommit mocks base method.
+func (m *MockgitOperationsAccessor) CreateCommit(ctx context.Context, session *models.StagingSessionState, message string) (models.CommitResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateCommit", ctx, session, message)
+	ret0, _ := ret[0].(models.CommitResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateCommit indicates an expected call of CreateCommit.
+func (mr *MockgitOperationsAccessorMockRecorder) CreateCommit(ctx, session, message any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateCommit", reflect.TypeOf((*MockgitOperationsAccessor)(nil).CreateCommit), ctx, session, message)
+}
+
+// CreateTag mocks base method.
+func (m *MockgitOperationsAccessor) CreateTag(ctx context.Context, tag, message string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateTag", ctx, tag, message)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateTag indicates an expected call of CreateTag.
+func (mr *MockgitOperationsAccessorMockRecorder) CreateTag(ctx, tag, message any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTag", reflect.TypeOf((*MockgitOperationsAccessor)(nil).CreateTag), ctx, tag, message)
+}
+
+// FinishStaging mocks base method.
+func (m *MockgitOperationsAccessor) FinishStaging(session *models.StagingSessionState) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FinishStaging", session)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// FinishStaging indicates an expected call of FinishStaging.
+func (mr *MockgitOperationsAccessorMockRecorder) FinishStaging(session any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FinishStaging", reflect.TypeOf((*MockgitOperationsAccessor)(nil).FinishStaging), session)
+}
+
+// GetCurrentBranch mocks base method.
+func (m *MockgitOperationsAccessor) GetCurrentBranch(ctx context.Context) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCurrentBranch", ctx)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCurrentBranch indicates an expected call of GetCurrentBranch.
+func (mr *MockgitOperationsAccessorMockRecorder) GetCurrentBranch(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCurrentBranch", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetCurrentBranch), ctx)
+}
+
+// GetLatestTag mocks base method.
+func (m *MockgitOperationsAccessor) GetLatestTag(ctx context.Context) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLatestTag", ctx)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLatestTag indicates an expected call of GetLatestTag.
+func (mr *MockgitOperationsAccessorMockRecorder) GetLatestTag(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestTag", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetLatestTag), ctx)
+}
+
+// GetRepoState mocks base method.
+func (m *MockgitOperationsAccessor) GetRepoState(ctx context.Context) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRepoState", ctx)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRepoState indicates an expected call of GetRepoState.
+func (mr *MockgitOperationsAccessorMockRecorder) GetRepoState(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRepoState", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetRepoState), ctx)
+}
+
+// GetStagedDiff mocks base method.
+func (m *MockgitOperationsAccessor) GetStagedDiff(ctx context.Context, session *models.StagingSessionState, maxSizeBytes int) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetStagedDiff", ctx, session, maxSizeBytes)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetStagedDiff indicates an expected call of GetStagedDiff.
+func (mr *MockgitOperationsAccessorMockRecorder) GetStagedDiff(ctx, session, maxSizeBytes any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStagedDiff", reflect.TypeOf((*MockgitOperationsAccessor)(nil).GetStagedDiff), ctx, session, maxSizeBytes)
+}
+
+// HasConflicts mocks base method.
+func (m *MockgitOperationsAccessor) HasConflicts(ctx context.Context) (bool, []string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HasConflicts", ctx)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].([]string)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// HasConflicts indicates an expected call of HasConflicts.
+func (mr *MockgitOperationsAccessorMockRecorder) HasConflicts(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasConflicts", reflect.TypeOf((*MockgitOperationsAccessor)(nil).HasConflicts), ctx)
+}
+
+// IncrementVersion mocks base method.
+func (m *MockgitOperationsAccessor) IncrementVersion(currentTag, incrementType string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IncrementVersion", currentTag, incrementType)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IncrementVersion indicates an expected call of IncrementVersion.
+func (mr *MockgitOperationsAccessorMockRecorder) IncrementVersion(currentTag, incrementType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementVersion", reflect.TypeOf((*MockgitOperationsAccessor)(nil).IncrementVersion), currentTag, incrementType)
+}
+
+// IsGitRepository mocks base method.
+func (m *MockgitOperationsAccessor) IsGitRepository(ctx context.Context) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsGitRepository", ctx)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsGitRepository indicates an expected call of IsGitRepository.
+func (mr *MockgitOperationsAccessorMockRecorder) IsGitRepository(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsGitRepository", reflect.TypeOf((*MockgitOperationsAccessor)(nil).IsGitRepository), ctx)
+}
+
+// Push mocks base method.
+func (m *MockgitOperationsAccessor) Push(ctx context.Context) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Push", ctx)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Push indicates an expected call of Push.
+func (mr *MockgitOperationsAccessorMockRecorder) Push(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Push", reflect.TypeOf((*MockgitOperationsAccessor)(nil).Push), ctx)
+}
+
+// PushTag mocks base method.
+func (m *MockgitOperationsAccessor) PushTag(ctx context.Context, tag string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PushTag", ctx, tag)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PushTag indicates an expected call of PushTag.
+func (mr *MockgitOperationsAccessorMockRecorder) PushTag(ctx, tag any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushTag", reflect.TypeOf((*MockgitOperationsAccessor)(nil).PushTag), ctx, tag)
 }

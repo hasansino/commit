@@ -1,0 +1,60 @@
+//go:build darwin
+
+package commit
+
+import (
+	"errors"
+	"fmt"
+	"syscall"
+
+	"golang.org/x/sys/unix"
+)
+
+const darwinProcessStopped = 4 // SSTOP from <sys/proc.h>
+
+func awaitGitCommandExit(pid int) error {
+	kqueue, err := unix.Kqueue()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = unix.Close(kqueue)
+	}()
+
+	var change unix.Kevent_t
+	unix.SetKevent(
+		&change,
+		pid,
+		unix.EVFILT_PROC,
+		unix.EV_ADD|unix.EV_CLEAR,
+	)
+	change.Fflags = unix.NOTE_EXIT | unix.NOTE_SIGNAL
+	events := make([]unix.Kevent_t, 1)
+	changes := []unix.Kevent_t{change}
+	for {
+		n, eventErr := unix.Kevent(kqueue, changes, events, nil)
+		changes = nil
+		if errors.Is(eventErr, syscall.EINTR) {
+			continue
+		}
+		if eventErr != nil {
+			return eventErr
+		}
+		if n != 1 {
+			return fmt.Errorf("unexpected process event count %d", n)
+		}
+		event := events[0]
+		if event.Flags&unix.EV_ERROR != 0 && event.Data != 0 {
+			return syscall.Errno(event.Data)
+		}
+		if event.Fflags&unix.NOTE_EXIT != 0 {
+			return nil
+		}
+		if event.Fflags&unix.NOTE_SIGNAL != 0 {
+			process, statusErr := unix.SysctlKinfoProc("kern.proc.pid", pid)
+			if statusErr == nil && process.Proc.P_stat == darwinProcessStopped {
+				return errGitCommandStopped
+			}
+		}
+	}
+}

@@ -10,6 +10,8 @@ Commit helper tool.
 
 ## Installation
 
+Native Git 2.25 or newer is required.
+
 ### Homebrew
 
 ```bash
@@ -53,7 +55,7 @@ Download the latest binary from the [releases page](https://github.com/hasansino
 - Configurable maximum diff size to include in prompts
 - Supports semantic versioning tag (major, minor, patch) incrementation and push
 - Option to push changes after committing to relevant remote branch
-- GPG signing according to user git configuration, supporting password input
+- Native Git signing according to user configuration (OpenPGP, SSH, or X.509)
 - Detects JIRA issue keys in branch name and adds them to commit message
 
 ## Demo
@@ -98,8 +100,10 @@ All flags can also be set via environment variables, e.g. `COMMIT_AUTO=true`.
 
 If changes are already staged, `commit` uses that exact staged set and does not apply
 `--include-only`, `--exclude`, or global-gitignore filtering. When nothing is staged,
-the tool stages matching changes temporarily and restores the original index after a
-dry run, cancellation, or failure before commit creation.
+the tool stages matching changes in an owner-only private index. The repository's real
+index remains untouched while providers and the interactive UI run, then is synchronized
+only after native `git commit` succeeds. Dry runs, cancellation, and pre-commit failures
+remove the private index without publishing its contents.
 
 `--include-only` and `--exclude` values are positive selectors and do not receive
 implicit wildcards. A literal such as `log` matches a complete file or directory
