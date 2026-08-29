@@ -80,7 +80,7 @@ Flags:
   -h, --help                        help for commit
       --include-only strings        Only include specific patterns, when staging changes.
       --jira-task-position string   Jira task position in commit message: prefix, infix, suffix, or none. (default "none")
-      --jira-task-style string      Jira task style: brackets, parens , plain-colon, or plain. (default "plain")
+      --jira-task-style string      Jira task style: brackets, parens, plain-colon, or plain. (default "plain")
       --log-level string            Logging level (debug, info, warn, error) (default "info")
       --max-diff-size-bytes int     Maximum diff size in bytes to include in prompts. (default 65536)
       --multi-line                  Use multi-line commit messages.
@@ -88,7 +88,7 @@ Flags:
       --providers strings           Providers to use, leave empty for all (claude|openai|gemini).
       --push                        Push after committing.
       --tag string                  Create and increment semver tag part (major|minor|patch).
-      --timeout duration            API timeout. (default 10s)
+      --timeout duration            API timeout. (default 5s)
       --use-global-gitignore        Use global gitignore. (default true)
 
 Use "commit [command] --help" for more information about a command.
@@ -113,11 +113,11 @@ not supported for these command-line selectors. This is similar to gitignore pat
 At least one *_API_KEY variable is required to use this tool.
 
 - ANTHROPIC_API_KEY
-- ANTHROPIC_MODEL (optional, defaults to "claude-3-5-haiku-latest")
+- ANTHROPIC_MODEL (optional, defaults to "claude-haiku-4-5")
 - OPENAI_API_KEY
-- OPENAI_MODEL (optional, defaults to "gpt-4-turbo")
+- OPENAI_MODEL (optional, defaults to "gpt-4o-mini")
 - GEMINI_API_KEY
-- GEMINI_MODEL (optional, defaults to "gemini-1.5-flash")
+- GEMINI_MODEL (optional, defaults to "gemini-2.5-flash-lite")
 
 ## Custom Prompt Variables
 

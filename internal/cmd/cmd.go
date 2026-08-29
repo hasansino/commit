@@ -101,7 +101,7 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	flags.String("jira-task-position", "none",
 		"Jira task position in commit message: prefix, infix, suffix, or none.")
 	flags.String(
-		"jira-task-style", "none", "Jira task style: brackets, parens , plain-colon, or plain.",
+		"jira-task-style", "plain", "Jira task style: brackets, parens, plain-colon, or plain.",
 	)
 
 	cmd.AddCommand(newVersionCommand())

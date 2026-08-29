@@ -69,6 +69,8 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 		jiraStyle = modules.JiraTaskStyleParens
 	case string(modules.JiraTaskStylePlainColon):
 		jiraStyle = modules.JiraTaskStylePlainColon
+	case "", "none", string(modules.JiraTaskStylePlain):
+		jiraStyle = modules.JiraTaskStylePlain
 	default:
 		jiraStyle = modules.JiraTaskStylePlain
 	}

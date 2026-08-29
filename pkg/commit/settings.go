@@ -2,7 +2,10 @@ package commit
 
 import (
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/hasansino/commit/pkg/commit/modules"
 )
 
 type Settings struct {
@@ -19,7 +22,7 @@ type Settings struct {
 	UseGlobalGitignore bool          // Use global gitignore from git config core.excludesFile
 	MaxDiffSizeBytes   int           // Maximum diff size in bytes to consider for commit message generation
 	JiraTaskPosition   string        // Jira task position: prefix/infix/suffix/none
-	JiraTaskStyle      string        // Jira task style: brackets/parens/none
+	JiraTaskStyle      string        // Jira task style: plain/plain-colon/brackets/parens
 }
 
 func (o *Settings) Validate() error {
@@ -35,5 +38,44 @@ func (o *Settings) Validate() error {
 	if o.MaxDiffSizeBytes < 0 {
 		return fmt.Errorf("max diff size bytes cannot be negative")
 	}
+	if !isValidJiraTaskPosition(o.JiraTaskPosition) {
+		return fmt.Errorf(
+			"invalid jira task position: %s (must be prefix, infix, suffix, or none)",
+			o.JiraTaskPosition,
+		)
+	}
+	if !isValidJiraTaskStyle(o.JiraTaskStyle) {
+		return fmt.Errorf(
+			"invalid jira task style: %s (must be plain, plain-colon, brackets, or parens)",
+			o.JiraTaskStyle,
+		)
+	}
 	return nil
+}
+
+func isValidJiraTaskPosition(position string) bool {
+	switch modules.JiraTaskPosition(strings.ToLower(position)) {
+	case "",
+		modules.JiraTaskPositionNone,
+		modules.JiraTaskPositionPrefix,
+		modules.JiraTaskPositionInfix,
+		modules.JiraTaskPositionSuffix:
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidJiraTaskStyle(style string) bool {
+	switch modules.JiraTaskStyle(strings.ToLower(style)) {
+	case "",
+		"none", // Legacy alias for plain.
+		modules.JiraTaskStylePlain,
+		modules.JiraTaskStylePlainColon,
+		modules.JiraTaskStyleBrackets,
+		modules.JiraTaskStyleParens:
+		return true
+	default:
+		return false
+	}
 }
