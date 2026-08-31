@@ -17,7 +17,10 @@ import (
 
 func TestAIService_NumProviders(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
-	service := newAIService(logger, 30*time.Second)
+	service, err := newAIService(logger, 30*time.Second, []string{"local"})
+	if err != nil {
+		t.Fatalf("newAIService() error = %v", err)
+	}
 
 	numProviders := service.NumProviders()
 
@@ -44,6 +47,43 @@ func TestAIService_NumProviders(t *testing.T) {
 	}
 }
 
+func TestAIService_BuildsOnlyRequestedProviders(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "configured")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+	logger := slog.New(slog.DiscardHandler)
+
+	withoutProviders, err := newAIService(logger, 30*time.Second, nil)
+	if err == nil {
+		t.Fatal("newAIService() without providers returned no error")
+	}
+	if withoutProviders != nil {
+		t.Fatalf("newAIService() without providers = %v, want nil", withoutProviders)
+	}
+
+	withLocal, err := newAIService(logger, 30*time.Second, []string{" LOCAL "})
+	if err != nil {
+		t.Fatalf("newAIService(local) error = %v", err)
+	}
+	if len(withLocal.providers) != 1 {
+		t.Fatalf("providers built for local request: %v", withLocal.providers)
+	}
+	if _, exists := withLocal.providers["local"]; !exists {
+		t.Fatal("local provider was not registered when requested")
+	}
+
+	withOpenAI, err := newAIService(logger, 30*time.Second, []string{"openai"})
+	if err != nil {
+		t.Fatalf("newAIService(openai) error = %v", err)
+	}
+	if len(withOpenAI.providers) != 1 {
+		t.Fatalf("providers built for OpenAI request: %v", withOpenAI.providers)
+	}
+	if _, exists := withOpenAI.providers["openai"]; !exists {
+		t.Fatal("OpenAI provider was not registered when requested")
+	}
+}
+
 func TestAIService_FilterProviders(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -55,8 +95,7 @@ func TestAIService_FilterProviders(t *testing.T) {
 	mockProvider2.EXPECT().Name().Return("claude").AnyTimes()
 
 	service := &aiService{
-		logger:  slog.New(slog.DiscardHandler),
-		timeout: 30 * time.Second,
+		logger: slog.New(slog.DiscardHandler),
 		providers: map[string]providerAccessor{
 			"openai": mockProvider1,
 			"claude": mockProvider2,
@@ -79,9 +118,9 @@ func TestAIService_FilterProviders(t *testing.T) {
 			want:      []string{"openai"},
 		},
 		{
-			name:      "case insensitive",
+			name:      "unnormalized provider does not match",
 			requested: []string{"OpenAI"},
-			want:      []string{"openai"},
+			want:      []string{},
 		},
 		{
 			name:      "multiple providers",
@@ -247,6 +286,7 @@ func TestAIService_GenerateCommitMessages(t *testing.T) {
 
 	mockProvider := mocks.NewMockproviderAccessor(ctrl)
 	mockProvider.EXPECT().Name().Return("testprovider").AnyTimes()
+	mockProvider.EXPECT().IsLocal().Return(false)
 	mockProvider.EXPECT().Ask(gomock.Any(), gomock.Any()).Return([]string{"test commit message"}, nil)
 
 	service := &aiService{
@@ -285,6 +325,7 @@ func TestAIService_GenerateCommitMessages_LogsSuccessfulProviderDuration(t *test
 
 	provider := mocks.NewMockproviderAccessor(ctrl)
 	provider.EXPECT().Name().Return("testprovider").AnyTimes()
+	provider.EXPECT().IsLocal().Return(false)
 	provider.EXPECT().Ask(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(context.Context, string) ([]string, error) {
 			time.Sleep(10 * time.Millisecond)
@@ -351,10 +392,12 @@ func TestAIService_GenerateCommitMessages_AllProviders(t *testing.T) {
 
 	firstProvider := mocks.NewMockproviderAccessor(ctrl)
 	firstProvider.EXPECT().Name().Return("provider1").AnyTimes()
+	firstProvider.EXPECT().IsLocal().Return(false)
 	firstProvider.EXPECT().Ask(gomock.Any(), gomock.Any()).Return([]string{"first message"}, nil)
 
 	secondProvider := mocks.NewMockproviderAccessor(ctrl)
 	secondProvider.EXPECT().Name().Return("provider2").AnyTimes()
+	secondProvider.EXPECT().IsLocal().Return(false)
 	secondProvider.EXPECT().Ask(gomock.Any(), gomock.Any()).Return([]string{"second message"}, nil)
 
 	service := &aiService{
@@ -384,10 +427,63 @@ func TestAIService_GenerateCommitMessages_AllProviders(t *testing.T) {
 	}
 }
 
+func TestAIService_GenerateCommitMessages_CompactsOnlyLocalProviderDiff(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	var diff strings.Builder
+	for index := range 3 {
+		name := fmt.Sprintf("file%d.go", index)
+		fmt.Fprintf(&diff, "diff --git a/%s b/%s\n", name, name)
+		diff.WriteString(strings.Repeat("+changed content for local inference\n", 400))
+	}
+	fullDiff := diff.String()
+
+	localProvider := mocks.NewMockproviderAccessor(ctrl)
+	localProvider.EXPECT().Name().Return("local").AnyTimes()
+	localProvider.EXPECT().IsLocal().Return(true)
+	localProvider.EXPECT().Ask(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, prompt string) ([]string, error) {
+			if len(prompt) > localMaxDiffSizeBytes {
+				t.Errorf("local prompt size = %d, want at most %d", len(prompt), localMaxDiffSizeBytes)
+			}
+			for index := range 3 {
+				header := fmt.Sprintf("diff --git a/file%d.go b/file%d.go", index, index)
+				if !strings.Contains(prompt, header) {
+					t.Errorf("local prompt omitted %q", header)
+				}
+			}
+			return []string{"local message"}, nil
+		},
+	)
+
+	cloudProvider := mocks.NewMockproviderAccessor(ctrl)
+	cloudProvider.EXPECT().Name().Return("cloud").AnyTimes()
+	cloudProvider.EXPECT().IsLocal().Return(false)
+	cloudProvider.EXPECT().Ask(gomock.Any(), fullDiff).Return([]string{"cloud message"}, nil)
+
+	service := &aiService{
+		logger:  slog.New(slog.DiscardHandler),
+		timeout: time.Second,
+		providers: map[string]providerAccessor{
+			"local": localProvider,
+			"cloud": cloudProvider,
+		},
+	}
+
+	messages, err := service.GenerateCommitMessages(
+		context.Background(), fullDiff, "main", nil, nil, "{diff}", false,
+	)
+	if err != nil {
+		t.Fatalf("GenerateCommitMessages() error = %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("GenerateCommitMessages() = %#v, want two messages", messages)
+	}
+}
+
 func TestAIService_GenerateCommitMessages_NoProviders(t *testing.T) {
 	service := &aiService{
 		logger:    slog.New(slog.DiscardHandler),
-		timeout:   30 * time.Second,
 		providers: map[string]providerAccessor{},
 	}
 
@@ -425,6 +521,7 @@ func TestAIService_GenerateCommitMessages_RejectsUnusableMessages(t *testing.T) 
 			ctrl := gomock.NewController(t)
 			provider := mocks.NewMockproviderAccessor(ctrl)
 			provider.EXPECT().Name().Return("unusable").AnyTimes()
+			provider.EXPECT().IsLocal().Return(false)
 			provider.EXPECT().Ask(gomock.Any(), gomock.Any()).Return(tt.messages, nil)
 
 			service := &aiService{
@@ -454,6 +551,7 @@ func TestAIService_GenerateCommitMessages_ContextCancellation(t *testing.T) {
 
 	mockProvider := mocks.NewMockproviderAccessor(ctrl)
 	mockProvider.EXPECT().Name().Return("testprovider").AnyTimes()
+	mockProvider.EXPECT().IsLocal().Return(false)
 	mockProvider.EXPECT().Ask(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, prompt string) ([]string, error) {
 			// Simulate slow provider that gets cancelled
@@ -502,6 +600,7 @@ func TestAIService_GenerateCommitMessages_ProviderError(t *testing.T) {
 
 	mockProvider := mocks.NewMockproviderAccessor(ctrl)
 	mockProvider.EXPECT().Name().Return("errorprovider").AnyTimes()
+	mockProvider.EXPECT().IsLocal().Return(false)
 	mockProvider.EXPECT().Ask(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("provider error"))
 
 	service := &aiService{

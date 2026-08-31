@@ -198,12 +198,12 @@ var _ = Describe("CLI contract", func() {
 })
 
 var _ = Describe("Repository preconditions", func() {
-	It("requires at least one API credential", func(ctx SpecContext) {
+	It("requires at least one available provider", func(ctx SpecContext) {
 		repository := newRepository()
 		result := runCLI(ctx, repository.Path, runOptions{GlobalConfig: repository.GlobalConfig}, "--auto")
 
 		Expect(result.ExitCode).To(Equal(1))
-		Expect(result.Output()).To(ContainSubstring("no api keys found in environment"))
+		Expect(result.Output()).To(ContainSubstring("no AI providers available"))
 		Expect(repository.head()).To(Equal(repository.InitialHead))
 	})
 

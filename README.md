@@ -33,7 +33,7 @@ Download the latest binary from the [releases page](https://github.com/hasansino
 
 - Dry-run mode
 - Generates messages according to conventional commits specification
-- Generates commit messages using multiple providers (claude, openai, gemini)
+- Generates commit messages using cloud providers (claude, openai, gemini) or a local GGUF model
 - Supports multi-line commit messages
 - Exclude/include specific file patterns and use global gitignore
 - Customizable commit message prompt templates
@@ -72,7 +72,7 @@ Flags:
       --max-diff-size-bytes int     Maximum diff size in bytes to include in prompts. (default 65536)
       --multi-line                  Use multi-line commit messages.
       --prompt string               Custom prompt template.
-      --providers strings           Providers to use, leave empty for all (claude|openai|gemini).
+      --providers strings           Providers to use (claude|openai|gemini|local). (default [claude,openai,gemini])
       --push                        Push after committing.
       --tag string                  Create and increment semver tag part (major|minor|patch).
       --timeout duration            API timeout. (default 5s)
@@ -99,7 +99,7 @@ not supported for these command-line selectors. This is similar to gitignore pat
 
 ## Configuration
 
-At least one *_API_KEY variable is required to use this tool.
+Cloud providers require the corresponding API key:
 
 - ANTHROPIC_API_KEY
 - ANTHROPIC_MODEL (optional, defaults to "claude-haiku-4-5")
@@ -108,7 +108,30 @@ At least one *_API_KEY variable is required to use this tool.
 - GEMINI_API_KEY
 - GEMINI_MODEL (optional, defaults to "gemini-2.5-flash-lite")
 
-## Custom Prompt Variables
+### Local GGUF model provider
+
+The local provider runs the externally installed `llama-cli` executable. It
+must be available in `PATH`; `commit` does not install or manage `llama.cpp`.
+
+```bash
+commit --providers=local
+```
+
+Large diffs may need a longer inference timeout, for example `--timeout=2m`.
+
+On first use, `commit` downloads official
+[Qwen3-0.6B Q8_0 GGUF](https://huggingface.co/Qwen/Qwen3-0.6B-GGUF).
+
+Local provider environment variables:
+
+- `LOCAL_MODEL`: existing GGUF path or HTTP(S) URL
+- `LOCAL_MODEL_SHA256`: expected checksum for a custom model
+- `LOCAL_MODEL_CACHE_DIR`: download cache override
+- `LOCAL_CONTEXT_SIZE`: context window in tokens (default `32768`)
+- `LOCAL_MAX_TOKENS`: maximum generated tokens (default `64`)
+- `HF_TOKEN`: optional Hugging Face token for a private `LOCAL_MODEL` URL
+
+### Custom Prompt Variables
 
 - {diff}: git diff of the changes to be committed
 - {files}: list of changed files

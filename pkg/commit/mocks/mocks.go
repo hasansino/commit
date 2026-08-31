@@ -71,6 +71,20 @@ func (mr *MockproviderAccessorMockRecorder) IsAvailable() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAvailable", reflect.TypeOf((*MockproviderAccessor)(nil).IsAvailable))
 }
 
+// IsLocal mocks base method.
+func (m *MockproviderAccessor) IsLocal() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsLocal")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsLocal indicates an expected call of IsLocal.
+func (mr *MockproviderAccessorMockRecorder) IsLocal() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsLocal", reflect.TypeOf((*MockproviderAccessor)(nil).IsLocal))
+}
+
 // Name mocks base method.
 func (m *MockproviderAccessor) Name() string {
 	m.ctrl.T.Helper()

@@ -697,7 +697,6 @@ func TestStagingIntegration_GetStagedDiffRunsZeroContextOnce(t *testing.T) {
 		if event.Event == "start" &&
 			slices.Contains(event.Argv, "diff") &&
 			slices.Contains(event.Argv, "--cached") &&
-			slices.Contains(event.Argv, "--function-context") &&
 			slices.Contains(event.Argv, "-U0") {
 			zeroContextDiffs++
 		}

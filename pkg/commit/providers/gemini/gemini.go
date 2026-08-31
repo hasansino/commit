@@ -10,6 +10,8 @@ import (
 	"google.golang.org/genai"
 )
 
+const ProviderName = "gemini"
+
 const (
 	defaultModel     = "gemini-2.5-flash-lite"
 	defaultMaxTokens = 4096
@@ -31,9 +33,7 @@ func NewGemini() *Gemini {
 	}
 }
 
-func (p *Gemini) Name() string {
-	return "gemini"
-}
+func (p *Gemini) Name() string { return ProviderName }
 
 func (p *Gemini) IsAvailable() bool {
 	return p.apiKey != ""
@@ -44,6 +44,8 @@ func (p *Gemini) SetTimeout(timeout time.Duration) {
 		p.timeout = timeout
 	}
 }
+
+func (p *Gemini) IsLocal() bool { return false }
 
 func (p *Gemini) Ask(ctx context.Context, prompt string) ([]string, error) {
 	if !p.IsAvailable() {

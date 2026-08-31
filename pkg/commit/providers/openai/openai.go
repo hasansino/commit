@@ -12,6 +12,8 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
+const ProviderName = "openai"
+
 const (
 	defaultModel     = shared.ChatModelGPT4oMini
 	defaultMaxTokens = 4096
@@ -33,9 +35,7 @@ func NewOpenAI() *OpenAI {
 	}
 }
 
-func (p *OpenAI) Name() string {
-	return "openai"
-}
+func (p *OpenAI) Name() string { return ProviderName }
 
 func (p *OpenAI) IsAvailable() bool {
 	return p.apiKey != ""
@@ -46,6 +46,8 @@ func (p *OpenAI) SetTimeout(timeout time.Duration) {
 		p.timeout = timeout
 	}
 }
+
+func (p *OpenAI) IsLocal() bool { return false }
 
 func (p *OpenAI) Ask(ctx context.Context, prompt string) ([]string, error) {
 	if !p.IsAvailable() {

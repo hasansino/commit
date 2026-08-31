@@ -11,6 +11,7 @@ import (
 
 	"github.com/hasansino/commit/pkg/commit/providers/claude"
 	"github.com/hasansino/commit/pkg/commit/providers/gemini"
+	"github.com/hasansino/commit/pkg/commit/providers/local"
 	"github.com/hasansino/commit/pkg/commit/providers/openai"
 
 	_ "embed"
@@ -25,33 +26,45 @@ var promptFormatSingle string
 //go:embed prompt-format-multi.md
 var promptFormatMulti string
 
+const localMaxDiffSizeBytes = 24 * 1024
+
 type aiService struct {
 	logger    *slog.Logger
 	timeout   time.Duration
 	providers map[string]providerAccessor
 }
 
-func newAIService(logger *slog.Logger, timeout time.Duration) *aiService {
+func newAIService(logger *slog.Logger, timeout time.Duration, requestedProviders []string) (*aiService, error) {
 	providerList := make(map[string]providerAccessor)
 
-	if openaiProvider := openai.NewOpenAI(); openaiProvider.IsAvailable() {
-		openaiProvider.SetTimeout(timeout)
-		providerList[openaiProvider.Name()] = openaiProvider
+	for _, requestedProvider := range requestedProviders {
+		var provider providerAccessor
+		switch strings.ToLower(strings.TrimSpace(requestedProvider)) {
+		case openai.ProviderName:
+			provider = openai.NewOpenAI()
+		case claude.ProviderName:
+			provider = claude.NewClaude()
+		case gemini.ProviderName:
+			provider = gemini.NewGemini()
+		case local.ProviderName:
+			provider = local.NewLocal(logger)
+		}
+		if provider == nil || !provider.IsAvailable() {
+			continue
+		}
+		provider.SetTimeout(timeout)
+		providerList[provider.Name()] = provider
 	}
-	if claudeProvider := claude.NewClaude(); claudeProvider.IsAvailable() {
-		claudeProvider.SetTimeout(timeout)
-		providerList[claudeProvider.Name()] = claudeProvider
-	}
-	if geminiProvider := gemini.NewGemini(); geminiProvider.IsAvailable() {
-		geminiProvider.SetTimeout(timeout)
-		providerList[geminiProvider.Name()] = geminiProvider
+
+	if len(providerList) == 0 {
+		return nil, errors.New("no AI providers available")
 	}
 
 	return &aiService{
 		logger:    logger,
 		timeout:   timeout,
 		providers: providerList,
-	}
+	}, nil
 }
 
 func (s *aiService) NumProviders() int {
@@ -64,7 +77,7 @@ func (s *aiService) FilterProviders(requested []string) map[string]providerAcces
 	}
 	filtered := make(map[string]providerAccessor)
 	for _, name := range requested {
-		if provider, exists := s.providers[strings.ToLower(name)]; exists {
+		if provider, exists := s.providers[name]; exists {
 			filtered[provider.Name()] = s.providers[provider.Name()]
 		}
 	}
@@ -83,13 +96,6 @@ func (s *aiService) GenerateCommitMessages(
 		return nil, fmt.Errorf("no ai providers available")
 	}
 
-	var prompt string
-	if len(customPrompt) > 0 {
-		prompt = s.buildCustomPrompt(customPrompt, diff, branch, files)
-	} else {
-		prompt = s.buildPrompt(diff, branch, files, multiLine)
-	}
-
 	type providerResponse struct {
 		Name    string
 		Message string
@@ -101,8 +107,21 @@ func (s *aiService) GenerateCommitMessages(
 	resultChan := make(chan providerResponse, len(activeProviders))
 
 	for _, provider := range activeProviders {
+		isLocal := provider.IsLocal()
+		providerDiff := diff
+		if isLocal {
+			providerDiff = compactUnifiedDiff(diff, localMaxDiffSizeBytes)
+		}
+
+		var prompt string
+		if len(customPrompt) > 0 {
+			prompt = s.buildCustomPrompt(customPrompt, providerDiff, branch, files)
+		} else {
+			prompt = s.buildPrompt(providerDiff, branch, files, multiLine)
+		}
+
 		wg.Add(1)
-		go func(ctx context.Context, provider providerAccessor) {
+		go func(ctx context.Context, provider providerAccessor, prompt string, isLocal bool) {
 			defer wg.Done()
 
 			s.logger.DebugContext(
@@ -110,13 +129,10 @@ func (s *aiService) GenerateCommitMessages(
 				"provider", provider.Name(),
 			)
 
-			ctx, cancel := context.WithTimeout(ctx, s.timeout)
-			defer cancel()
-
 			started := time.Now()
-
-			messages, err := provider.Ask(ctx, prompt)
+			messages, err := s.askProvider(ctx, provider, prompt, isLocal)
 			duration := time.Since(started)
+
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
 					s.logger.ErrorContext(
@@ -166,7 +182,7 @@ func (s *aiService) GenerateCommitMessages(
 				Message: message,
 				Time:    duration,
 			}
-		}(ctx, provider)
+		}(ctx, provider, prompt, isLocal)
 	}
 
 	results := make(map[string]string)
@@ -191,6 +207,20 @@ func (s *aiService) GenerateCommitMessages(
 	}
 
 	return results, nil
+}
+
+func (s *aiService) askProvider(
+	ctx context.Context,
+	provider providerAccessor,
+	prompt string,
+	isLocal bool,
+) ([]string, error) {
+	if isLocal {
+		return provider.Ask(ctx, prompt)
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	return provider.Ask(requestCtx, prompt)
 }
 
 func (s *aiService) cleanupMessage(message string) string {

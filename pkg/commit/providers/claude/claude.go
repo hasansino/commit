@@ -11,6 +11,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
+const ProviderName = "claude"
+
 const (
 	defaultModel     = string(anthropic.ModelClaudeHaiku4_5)
 	defaultMaxTokens = 4096
@@ -33,7 +35,7 @@ func NewClaude() *Claude {
 }
 
 func (p *Claude) Name() string {
-	return "claude"
+	return ProviderName
 }
 
 func (p *Claude) IsAvailable() bool {
@@ -45,6 +47,8 @@ func (p *Claude) SetTimeout(timeout time.Duration) {
 		p.timeout = timeout
 	}
 }
+
+func (p *Claude) IsLocal() bool { return false }
 
 func (p *Claude) Ask(ctx context.Context, prompt string) ([]string, error) {
 	if !p.IsAvailable() {

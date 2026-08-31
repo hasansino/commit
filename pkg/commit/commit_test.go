@@ -25,7 +25,7 @@ func TestNewCommitService(t *testing.T) {
 		{
 			name: "valid settings",
 			settings: &Settings{
-				Providers:          []string{"openai"},
+				Providers:          []string{"local"},
 				Timeout:            30 * time.Second,
 				CustomPrompt:       "",
 				Auto:               false,
@@ -61,7 +61,8 @@ func TestNewCommitService(t *testing.T) {
 		{
 			name: "valid settings with logger option",
 			settings: &Settings{
-				Timeout: 30 * time.Second,
+				Providers: []string{"local"},
+				Timeout:   30 * time.Second,
 			},
 			opts: []Option{
 				WithLogger(slog.New(slog.DiscardHandler)),
@@ -71,6 +72,7 @@ func TestNewCommitService(t *testing.T) {
 		{
 			name: "valid settings with jira transform",
 			settings: &Settings{
+				Providers:        []string{"local"},
 				Timeout:          30 * time.Second,
 				JiraTaskPosition: "suffix",
 				JiraTaskStyle:    "brackets",

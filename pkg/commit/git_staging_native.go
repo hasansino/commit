@@ -137,7 +137,6 @@ func (g *gitOperations) GetStagedDiff(
 		"--no-ext-diff",
 		"--no-prefix",
 		"--diff-algorithm=patience",
-		"--function-context",
 		"--find-renames=50%",
 		state.BaseTree,
 	}
@@ -153,7 +152,7 @@ func (g *gitOperations) GetStagedDiff(
 			return string(diff), nil
 		}
 	}
-	return string(diff[:maxSizeBytes]), nil
+	return compactUnifiedDiff(string(diff), maxSizeBytes), nil
 }
 
 func splitNullTerminated(output []byte) []string {

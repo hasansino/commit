@@ -45,7 +45,10 @@ func NewCommitService(settings *Settings, opts ...Option) (*Service, error) {
 	}
 
 	svc.gitOps = git
-	svc.aiService = newAIService(svc.logger, settings.Timeout)
+	svc.aiService, err = newAIService(svc.logger, settings.Timeout, settings.Providers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize AI service: %w", err)
+	}
 
 	// Parse Jira task position
 	var jiraPosition modules.JiraTaskPosition

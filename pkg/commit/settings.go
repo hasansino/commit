@@ -50,6 +50,9 @@ func (o *Settings) Validate() error {
 			o.JiraTaskStyle,
 		)
 	}
+	for i, provider := range o.Providers {
+		o.Providers[i] = strings.ToLower(strings.TrimSpace(provider))
+	}
 	return nil
 }
 

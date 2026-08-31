@@ -34,3 +34,18 @@ func TestNewCommitCommandJiraDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestNewCommitCommandProviderDefaults(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	ctx := context.Background()
+	command := NewCommitCommand(ctx, cmdutil.NewFactory(ctx))
+	flag := command.Flags().Lookup("providers")
+	if flag == nil {
+		t.Fatal("providers flag not found")
+	}
+	if flag.DefValue != "[claude,openai,gemini]" {
+		t.Errorf("providers default = %q", flag.DefValue)
+	}
+}

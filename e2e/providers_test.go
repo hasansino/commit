@@ -133,7 +133,7 @@ var _ = Describe("AI provider boundaries", func() {
 		result := runCLI(ctx, repository.Path, options, "--auto", "--providers=claude")
 
 		Expect(result.ExitCode).To(Equal(1))
-		Expect(result.Output()).To(ContainSubstring("no ai providers available"))
+		Expect(result.Output()).To(ContainSubstring("no AI providers available"))
 		Expect(api.requestsFor(providerOpenAI)).To(BeEmpty())
 		Expect(repository.indexBytes()).To(Equal(beforeIndex))
 		Expect(repository.head()).To(Equal(repository.InitialHead))

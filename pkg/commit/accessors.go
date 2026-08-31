@@ -14,6 +14,7 @@ type providerAccessor interface {
 	IsAvailable() bool
 	Ask(ctx context.Context, prompt string) ([]string, error)
 	SetTimeout(timeout time.Duration)
+	IsLocal() bool
 }
 
 type moduleAccessor interface {
