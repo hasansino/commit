@@ -99,7 +99,7 @@ func (p *Local) downloadModel(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("create model temporary file: %w", err)
 	}
 	tempPath := tempFile.Name()
-	defer os.Remove(tempPath)
+	defer func() { _ = os.Remove(tempPath) }()
 
 	hasher := sha256.New()
 	written, copyErr := copyWithProgress(
@@ -228,7 +228,7 @@ func writeVerificationStamp(modelPath, checksum string, info os.FileInfo) error 
 		return fmt.Errorf("create model verification stamp: %w", err)
 	}
 	tempPath := tempFile.Name()
-	defer os.Remove(tempPath)
+	defer func() { _ = os.Remove(tempPath) }()
 	if err := tempFile.Chmod(0o600); err != nil {
 		_ = tempFile.Close()
 		return fmt.Errorf("protect model verification stamp: %w", err)
