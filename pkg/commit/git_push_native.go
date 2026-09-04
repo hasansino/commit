@@ -15,7 +15,6 @@ type nativePushTarget struct {
 	localRef    string
 	remote      string
 	remoteRef   string
-	force       bool
 	setUpstream bool
 }
 
@@ -86,9 +85,6 @@ func (g *gitOperations) pushNative(ctx context.Context) (string, error) {
 	}
 
 	refspec := target.localRef + ":" + target.remoteRef
-	if target.force {
-		refspec = "+" + refspec
-	}
 	pushArgs := []string{"push", "--no-follow-tags"}
 	if target.setUpstream {
 		pushArgs = append(pushArgs, "--set-upstream")
@@ -288,236 +284,24 @@ func (g *gitOperations) resolveNativePushTarget(ctx context.Context) (nativePush
 		return nativePushTarget{}, err
 	}
 
+	// Push is an explicit application action with a one-branch contract.
+	// Git's push.default, upstream merge ref, and remote push refspecs must not
+	// redirect the checked-out branch to a differently named remote branch.
 	target := nativePushTarget{
-		branch:   branch,
-		localRef: localRef,
-		remote:   remote,
-	}
-	refspecs, err := g.nativeConfigValues(ctx, "remote."+remote+".push")
-	if err != nil {
-		return nativePushTarget{}, fmt.Errorf(
-			"failed to read push refspecs for remote %q: %w",
-			remote,
-			err,
-		)
-	}
-	if len(refspecs) != 0 {
-		return g.resolveExplicitNativePushRefspec(ctx, target, refspecs)
+		branch:    branch,
+		localRef:  localRef,
+		remote:    remote,
+		remoteRef: localRef,
 	}
 
-	mode, configured, err := g.nativeConfigValue(ctx, "push.default")
-	if err != nil {
-		return nativePushTarget{}, fmt.Errorf("failed to read push.default: %w", err)
-	}
-	if !configured {
-		mode = "simple"
-	}
 	autoSetupRemote, _, err := g.nativeConfigBool(ctx, "push.autoSetupRemote")
 	if err != nil {
 		return nativePushTarget{}, fmt.Errorf("failed to read push.autoSetupRemote: %w", err)
 	}
-
-	switch mode {
-	case "nothing":
-		return nativePushTarget{}, errors.New("push.default=nothing refuses an implicit branch push")
-	case "matching":
-		return nativePushTarget{}, errors.New(
-			"push.default=matching may update multiple branches; configure a one-branch destination",
-		)
-	case "current":
-		target.remoteRef = localRef
-		target.setUpstream, err = g.shouldAutoSetupUpstream(ctx, branch, autoSetupRemote)
-		if err != nil {
-			return nativePushTarget{}, err
-		}
-	case "upstream", "tracking":
-		upstreamRemote, upstreamRef, hasUpstream, err := g.nativeUpstreamOptional(ctx, branch)
-		if err != nil {
-			return nativePushTarget{}, err
-		}
-		if !hasUpstream {
-			if !autoSetupRemote {
-				return nativePushTarget{}, fmt.Errorf("branch %q has no upstream branch", branch)
-			}
-			target.remoteRef = localRef
-			target.setUpstream = true
-			break
-		}
-		if upstreamRemote != remote {
-			return nativePushTarget{}, fmt.Errorf(
-				"push.default=%s requires the upstream remote %q, but the push remote is %q",
-				mode,
-				upstreamRemote,
-				remote,
-			)
-		}
-		target.remoteRef = upstreamRef
-	case "simple":
-		pullRemote, err := g.resolveNativePullRemote(ctx, branch)
-		if err != nil {
-			return nativePushTarget{}, err
-		}
-		if pullRemote != remote {
-			// In a triangular workflow Git's simple mode behaves like current.
-			target.remoteRef = localRef
-			target.setUpstream, err = g.shouldAutoSetupUpstream(ctx, branch, autoSetupRemote)
-			if err != nil {
-				return nativePushTarget{}, err
-			}
-			break
-		}
-
-		upstreamRemote, upstreamRef, hasUpstream, err := g.nativeUpstreamOptional(ctx, branch)
-		if err != nil {
-			return nativePushTarget{}, err
-		}
-		if !hasUpstream {
-			if !autoSetupRemote {
-				return nativePushTarget{}, fmt.Errorf("branch %q has no upstream branch", branch)
-			}
-			target.remoteRef = localRef
-			target.setUpstream = true
-			break
-		}
-		if upstreamRemote != remote {
-			return nativePushTarget{}, fmt.Errorf(
-				"upstream remote %q does not match push remote %q",
-				upstreamRemote,
-				remote,
-			)
-		}
-		if upstreamRef != localRef {
-			return nativePushTarget{}, fmt.Errorf(
-				"push.default=simple refuses branch %q because its upstream branch is %q",
-				branch,
-				strings.TrimPrefix(upstreamRef, "refs/heads/"),
-			)
-		}
-		target.remoteRef = localRef
-	default:
-		return nativePushTarget{}, fmt.Errorf("unsupported push.default value %q", mode)
+	target.setUpstream, err = g.shouldAutoSetupUpstream(ctx, branch, autoSetupRemote)
+	if err != nil {
+		return nativePushTarget{}, err
 	}
-
-	if err := g.validateNativeHeadRef(ctx, target.remoteRef); err != nil {
-		return nativePushTarget{}, fmt.Errorf("invalid push destination: %w", err)
-	}
-	return target, nil
-}
-
-func (g *gitOperations) resolveExplicitNativePushRefspec(
-	ctx context.Context,
-	target nativePushTarget,
-	refspecs []string,
-) (nativePushTarget, error) {
-	if len(refspecs) != 1 {
-		return nativePushTarget{}, fmt.Errorf(
-			"remote %q configures %d push refspecs; refusing a potentially multi-ref push",
-			target.remote,
-			len(refspecs),
-		)
-	}
-
-	refspec := refspecs[0]
-	if strings.HasPrefix(refspec, "+") {
-		target.force = true
-		refspec = strings.TrimPrefix(refspec, "+")
-	}
-	if refspec == ":" || strings.Contains(refspec, "*") || strings.HasPrefix(refspec, "^") {
-		return nativePushTarget{}, fmt.Errorf(
-			"remote %q push refspec %q is matching, wildcard, or negative; refusing an ambiguous push",
-			target.remote,
-			refspecs[0],
-		)
-	}
-	if strings.Count(refspec, ":") > 1 {
-		return nativePushTarget{}, fmt.Errorf(
-			"remote %q has invalid push refspec %q",
-			target.remote,
-			refspecs[0],
-		)
-	}
-
-	source, destination, hasDestination := strings.Cut(refspec, ":")
-	if source == "" {
-		return nativePushTarget{}, fmt.Errorf(
-			"remote %q push refspec %q deletes a ref; refusing it for a branch push",
-			target.remote,
-			refspecs[0],
-		)
-	}
-	if source != "HEAD" && source != target.branch && source != target.localRef {
-		return nativePushTarget{}, fmt.Errorf(
-			"remote %q push refspec %q does not select the current branch %q",
-			target.remote,
-			refspecs[0],
-			target.branch,
-		)
-	}
-	if source == target.branch {
-		if strings.HasPrefix(source, "-") {
-			return nativePushTarget{}, fmt.Errorf(
-				"remote %q push refspec source %q starts with a dash; use the fully qualified source %q",
-				target.remote,
-				source,
-				target.localRef,
-			)
-		}
-		resolved, err := g.runGit(
-			ctx,
-			"",
-			nil,
-			"rev-parse",
-			"--symbolic-full-name",
-			"--verify",
-			source,
-		)
-		if err != nil {
-			return nativePushTarget{}, fmt.Errorf(
-				"remote %q push refspec source %q does not resolve uniquely to current branch %q: %w",
-				target.remote,
-				source,
-				target.branch,
-				err,
-			)
-		}
-		if strings.TrimSpace(string(resolved)) != target.localRef {
-			return nativePushTarget{}, fmt.Errorf(
-				"remote %q push refspec source %q does not resolve uniquely to current branch %q",
-				target.remote,
-				source,
-				target.branch,
-			)
-		}
-	}
-
-	if !hasDestination {
-		destination = target.localRef
-	} else if destination == "" {
-		return nativePushTarget{}, fmt.Errorf(
-			"remote %q has invalid push refspec %q with an empty destination",
-			target.remote,
-			refspecs[0],
-		)
-	} else if !strings.HasPrefix(destination, "refs/") {
-		if destination == "HEAD" {
-			return nativePushTarget{}, fmt.Errorf(
-				"remote %q push refspec %q has an ambiguous HEAD destination",
-				target.remote,
-				refspecs[0],
-			)
-		}
-		destination = "refs/heads/" + destination
-	}
-	if err := g.validateNativeHeadRef(ctx, destination); err != nil {
-		return nativePushTarget{}, fmt.Errorf(
-			"remote %q push refspec %q has an invalid branch destination: %w",
-			target.remote,
-			refspecs[0],
-			err,
-		)
-	}
-
-	target.remoteRef = destination
 	return target, nil
 }
 
@@ -559,23 +343,6 @@ func (g *gitOperations) resolveNativePushRemote(ctx context.Context, branch stri
 	return g.nativeFallbackRemote(ctx)
 }
 
-func (g *gitOperations) resolveNativePullRemote(ctx context.Context, branch string) (string, error) {
-	remote, configured, err := g.nativeConfigValue(ctx, "branch."+branch+".remote")
-	if err != nil {
-		return "", fmt.Errorf("failed to read pull remote for branch %q: %w", branch, err)
-	}
-	if configured {
-		if remote == "" {
-			return "", fmt.Errorf("branch %q configures an empty remote", branch)
-		}
-		return remote, nil
-	}
-	// Git's fetch-side default remains "origin" even when another single
-	// remote happens to exist. This distinction is what makes an explicit
-	// pushRemote a triangular workflow under push.default=simple.
-	return "origin", nil
-}
-
 func (g *gitOperations) nativeFallbackRemote(ctx context.Context) (string, error) {
 	output, err := g.runGit(ctx, "", nil, "remote")
 	if err != nil {
@@ -600,35 +367,6 @@ func (g *gitOperations) nativeFallbackRemote(ctx context.Context) (string, error
 		return "", errors.New("no push remote is configured")
 	}
 	return "", errors.New("multiple remotes are configured and no push remote can be selected")
-}
-
-func (g *gitOperations) nativeUpstreamOptional(
-	ctx context.Context,
-	branch string,
-) (string, string, bool, error) {
-	mergeRefs, err := g.nativeConfigValues(ctx, "branch."+branch+".merge")
-	if err != nil {
-		return "", "", false, fmt.Errorf("failed to read upstream for branch %q: %w", branch, err)
-	}
-	if len(mergeRefs) == 0 {
-		return "", "", false, nil
-	}
-	if len(mergeRefs) != 1 {
-		return "", "", false, fmt.Errorf(
-			"branch %q configures %d upstream merge refs; refusing an ambiguous push",
-			branch,
-			len(mergeRefs),
-		)
-	}
-	if err := g.validateNativeHeadRef(ctx, mergeRefs[0]); err != nil {
-		return "", "", false, fmt.Errorf("branch %q has an invalid upstream ref: %w", branch, err)
-	}
-
-	remote, err := g.resolveNativePullRemote(ctx, branch)
-	if err != nil {
-		return "", "", false, err
-	}
-	return remote, mergeRefs[0], true, nil
 }
 
 func (g *gitOperations) shouldAutoSetupUpstream(

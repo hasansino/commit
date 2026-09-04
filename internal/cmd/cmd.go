@@ -91,7 +91,7 @@ func NewCommitCommand(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	flags.Bool("multi-line", false,
 		"Use multi-line commit messages.")
 	flags.Bool("push", false,
-		"Push after committing.")
+		"Push the current branch to the same-named remote branch after committing.")
 	flags.String("tag", "",
 		"Create and increment semver tag part (major|minor|patch).")
 	flags.Bool("use-global-gitignore", true,

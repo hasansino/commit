@@ -39,7 +39,7 @@ Download the latest binary from the [releases page](https://github.com/hasansino
 - Customizable commit message prompt templates
 - Configurable maximum diff size to include in prompts
 - Supports semantic versioning tag (major, minor, patch) incrementation and push
-- Option to push changes after committing to relevant remote branch
+- Option to push the current branch to the same-named remote branch after committing
 - Native Git signing according to user configuration (OpenPGP, SSH, or X.509)
 - Detects JIRA issue keys in branch name and adds them to commit message
 
@@ -73,7 +73,7 @@ Flags:
       --multi-line                  Use multi-line commit messages.
       --prompt string               Custom prompt template.
       --providers strings           Providers to use (claude|openai|gemini|local). (default [claude,openai,gemini])
-      --push                        Push after committing.
+      --push                        Push the current branch to the same-named remote branch after committing.
       --tag string                  Create and increment semver tag part (major|minor|patch).
       --timeout duration            API timeout. (default 5s)
       --use-global-gitignore        Use global gitignore. (default true)
