@@ -12,14 +12,12 @@ import (
 	"time"
 )
 
-func TestResolveNativePushTarget_DefaultModes(t *testing.T) {
+func TestResolveNativePushTarget_AlwaysUsesCurrentBranch(t *testing.T) {
 	tests := []struct {
-		name        string
-		configure   func(*testing.T, string)
-		wantRemote  string
-		wantRef     string
-		wantSetup   bool
-		wantErrText string
+		name       string
+		configure  func(*testing.T, string)
+		wantRemote string
+		wantSetup  bool
 	}{
 		{
 			name: "current selects same-named branch without upstream",
@@ -28,27 +26,24 @@ func TestResolveNativePushTarget_DefaultModes(t *testing.T) {
 				runNativeTestGit(t, repoPath, "config", "push.default", "current")
 			},
 			wantRemote: "origin",
-			wantRef:    "refs/heads/topic",
 		},
 		{
-			name: "upstream preserves differently named destination",
+			name: "upstream cannot redirect destination",
 			configure: func(t *testing.T, repoPath string) {
 				configureNativePushRemote(t, repoPath, "origin", newNativeBareRepo(t))
 				configureNativeUpstream(t, repoPath, "origin", "refs/heads/review/topic")
 				runNativeTestGit(t, repoPath, "config", "push.default", "upstream")
 			},
 			wantRemote: "origin",
-			wantRef:    "refs/heads/review/topic",
 		},
 		{
-			name: "tracking is upstream alias",
+			name: "tracking cannot redirect destination",
 			configure: func(t *testing.T, repoPath string) {
 				configureNativePushRemote(t, repoPath, "origin", newNativeBareRepo(t))
 				configureNativeUpstream(t, repoPath, "origin", "refs/heads/review/topic")
 				runNativeTestGit(t, repoPath, "config", "push.default", "tracking")
 			},
 			wantRemote: "origin",
-			wantRef:    "refs/heads/review/topic",
 		},
 		{
 			name: "simple accepts same named upstream",
@@ -57,22 +52,21 @@ func TestResolveNativePushTarget_DefaultModes(t *testing.T) {
 				configureNativeUpstream(t, repoPath, "origin", "refs/heads/topic")
 			},
 			wantRemote: "origin",
-			wantRef:    "refs/heads/topic",
 		},
 		{
-			name: "simple refuses differently named upstream",
+			name: "simple ignores differently named upstream",
 			configure: func(t *testing.T, repoPath string) {
 				configureNativePushRemote(t, repoPath, "origin", newNativeBareRepo(t))
 				configureNativeUpstream(t, repoPath, "origin", "refs/heads/review/topic")
 			},
-			wantErrText: "push.default=simple refuses",
+			wantRemote: "origin",
 		},
 		{
-			name: "simple refuses missing upstream in central workflow",
+			name: "simple works without upstream",
 			configure: func(t *testing.T, repoPath string) {
 				configureNativePushRemote(t, repoPath, "origin", newNativeBareRepo(t))
 			},
-			wantErrText: "has no upstream branch",
+			wantRemote: "origin",
 		},
 		{
 			name: "simple acts as current in triangular workflow",
@@ -83,7 +77,6 @@ func TestResolveNativePushTarget_DefaultModes(t *testing.T) {
 				runNativeTestGit(t, repoPath, "config", "remote.pushDefault", "publish")
 			},
 			wantRemote: "publish",
-			wantRef:    "refs/heads/topic",
 		},
 		{
 			name: "simple infers triangular workflow without configured pull remote",
@@ -93,7 +86,6 @@ func TestResolveNativePushTarget_DefaultModes(t *testing.T) {
 				runNativeTestGit(t, repoPath, "config", "branch.topic.pushRemote", "publish")
 			},
 			wantRemote: "publish",
-			wantRef:    "refs/heads/topic",
 		},
 		{
 			name: "simple auto-setup selects and records current branch",
@@ -102,32 +94,23 @@ func TestResolveNativePushTarget_DefaultModes(t *testing.T) {
 				runNativeTestGit(t, repoPath, "config", "push.autoSetupRemote", "true")
 			},
 			wantRemote: "origin",
-			wantRef:    "refs/heads/topic",
 			wantSetup:  true,
 		},
 		{
-			name: "nothing refuses",
+			name: "nothing cannot disable explicit application push",
 			configure: func(t *testing.T, repoPath string) {
 				configureNativePushRemote(t, repoPath, "origin", newNativeBareRepo(t))
 				runNativeTestGit(t, repoPath, "config", "push.default", "nothing")
 			},
-			wantErrText: "push.default=nothing",
+			wantRemote: "origin",
 		},
 		{
-			name: "matching refuses",
+			name: "matching cannot expand explicit application push",
 			configure: func(t *testing.T, repoPath string) {
 				configureNativePushRemote(t, repoPath, "origin", newNativeBareRepo(t))
 				runNativeTestGit(t, repoPath, "config", "push.default", "matching")
 			},
-			wantErrText: "push.default=matching",
-		},
-		{
-			name: "malformed case is not normalized",
-			configure: func(t *testing.T, repoPath string) {
-				configureNativePushRemote(t, repoPath, "origin", newNativeBareRepo(t))
-				runNativeTestGit(t, repoPath, "config", "push.default", "CURRENT")
-			},
-			wantErrText: "malformed value for push.default",
+			wantRemote: "origin",
 		},
 	}
 
@@ -137,25 +120,18 @@ func TestResolveNativePushTarget_DefaultModes(t *testing.T) {
 			test.configure(t, repoPath)
 
 			target, err := gitOps.resolveNativePushTarget(context.Background())
-			if test.wantErrText != "" {
-				if err == nil || !strings.Contains(err.Error(), test.wantErrText) {
-					t.Fatalf("resolveNativePushTarget() error = %v, want containing %q", err, test.wantErrText)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("resolveNativePushTarget() error = %v", err)
 			}
 			if target.remote != test.wantRemote ||
-				target.remoteRef != test.wantRef ||
+				target.remoteRef != "refs/heads/topic" ||
 				target.setUpstream != test.wantSetup {
 				t.Fatalf(
-					"resolveNativePushTarget() = remote %q ref %q setup %v, want remote %q ref %q setup %v",
+					"resolveNativePushTarget() = remote %q ref %q setup %v, want remote %q ref refs/heads/topic setup %v",
 					target.remote,
 					target.remoteRef,
 					target.setUpstream,
 					test.wantRemote,
-					test.wantRef,
 					test.wantSetup,
 				)
 			}
@@ -163,59 +139,27 @@ func TestResolveNativePushTarget_DefaultModes(t *testing.T) {
 	}
 }
 
-func TestResolveNativePushTarget_ExplicitRefspecs(t *testing.T) {
+func TestResolveNativePushTarget_IgnoresConfiguredPushRefspecs(t *testing.T) {
 	tests := []struct {
-		name        string
-		refspecs    []string
-		wantRef     string
-		wantForce   bool
-		wantErrText string
+		name     string
+		refspecs []string
 	}{
-		{
-			name: "full destination", refspecs: []string{"HEAD:refs/heads/review/topic"},
-			wantRef: "refs/heads/review/topic",
-		},
-		{
-			name: "short destination", refspecs: []string{"topic:published"},
-			wantRef: "refs/heads/published",
-		},
-		{
-			name: "omitted destination", refspecs: []string{"refs/heads/topic"},
-			wantRef: "refs/heads/topic",
-		},
-		{
-			name: "forced exact mapping", refspecs: []string{"+HEAD:refs/heads/forced"},
-			wantRef: "refs/heads/forced", wantForce: true,
-		},
-		{name: "matching", refspecs: []string{":"}, wantErrText: "ambiguous push"},
+		{name: "full destination", refspecs: []string{"HEAD:refs/heads/review/topic"}},
+		{name: "short destination", refspecs: []string{"topic:published"}},
+		{name: "omitted destination", refspecs: []string{"refs/heads/topic"}},
+		{name: "forced destination", refspecs: []string{"+HEAD:refs/heads/forced"}},
+		{name: "matching", refspecs: []string{":"}},
 		{
 			name: "wildcard", refspecs: []string{"refs/heads/*:refs/heads/*"},
-			wantErrText: "ambiguous push",
 		},
-		{
-			name: "negative", refspecs: []string{"^refs/heads/other"},
-			wantErrText: "ambiguous push",
-		},
+		{name: "negative", refspecs: []string{"^refs/heads/other"}},
 		{
 			name: "multiple", refspecs: []string{"HEAD:refs/heads/one", "HEAD:refs/heads/two"},
-			wantErrText: "potentially multi-ref",
 		},
-		{
-			name: "different source", refspecs: []string{"refs/heads/other:refs/heads/topic"},
-			wantErrText: "does not select the current branch",
-		},
-		{
-			name: "deletion", refspecs: []string{":refs/heads/topic"},
-			wantErrText: "deletes a ref",
-		},
-		{
-			name: "tag destination", refspecs: []string{"HEAD:refs/tags/topic"},
-			wantErrText: "not a branch ref",
-		},
-		{
-			name: "ambiguous HEAD destination", refspecs: []string{"HEAD:HEAD"},
-			wantErrText: "ambiguous HEAD destination",
-		},
+		{name: "different source", refspecs: []string{"refs/heads/other:refs/heads/topic"}},
+		{name: "deletion", refspecs: []string{":refs/heads/topic"}},
+		{name: "tag destination", refspecs: []string{"HEAD:refs/tags/topic"}},
+		{name: "ambiguous HEAD destination", refspecs: []string{"HEAD:HEAD"}},
 	}
 
 	for _, test := range tests {
@@ -228,38 +172,24 @@ func TestResolveNativePushTarget_ExplicitRefspecs(t *testing.T) {
 			}
 
 			target, err := gitOps.resolveNativePushTarget(context.Background())
-			if test.wantErrText != "" {
-				if err == nil || !strings.Contains(err.Error(), test.wantErrText) {
-					t.Fatalf("resolveNativePushTarget() error = %v, want containing %q", err, test.wantErrText)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("resolveNativePushTarget() error = %v", err)
 			}
-			if target.remoteRef != test.wantRef || target.force != test.wantForce {
-				t.Fatalf(
-					"resolveNativePushTarget() = ref %q force %v, want ref %q force %v",
-					target.remoteRef,
-					target.force,
-					test.wantRef,
-					test.wantForce,
-				)
+			if target.remoteRef != "refs/heads/topic" {
+				t.Fatalf("resolveNativePushTarget() ref = %q, want refs/heads/topic", target.remoteRef)
 			}
 		})
 	}
 }
 
-func TestResolveNativePushTarget_RejectsAmbiguousShortSource(t *testing.T) {
+func TestResolveNativePushTarget_IgnoresAmbiguousConfiguredSource(t *testing.T) {
 	tests := []struct {
-		name        string
-		source      string
-		wantErrText string
+		name   string
+		source string
 	}{
 		{
-			name:        "short source collides with tag",
-			source:      "topic",
-			wantErrText: "does not resolve uniquely",
+			name:   "short source collides with tag",
+			source: "topic",
 		},
 		{
 			name:   "fully qualified branch remains unambiguous",
@@ -281,22 +211,12 @@ func TestResolveNativePushTarget_RejectsAmbiguousShortSource(t *testing.T) {
 			)
 
 			target, err := gitOps.resolveNativePushTarget(context.Background())
-			if test.wantErrText != "" {
-				if err == nil || !strings.Contains(err.Error(), test.wantErrText) {
-					t.Fatalf(
-						"resolveNativePushTarget() error = %v, want containing %q",
-						err,
-						test.wantErrText,
-					)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("resolveNativePushTarget() error = %v", err)
 			}
-			if target.remoteRef != "refs/heads/published" {
+			if target.remoteRef != "refs/heads/topic" {
 				t.Fatalf(
-					"resolveNativePushTarget() destination = %q, want refs/heads/published",
+					"resolveNativePushTarget() destination = %q, want refs/heads/topic",
 					target.remoteRef,
 				)
 			}
@@ -304,7 +224,7 @@ func TestResolveNativePushTarget_RejectsAmbiguousShortSource(t *testing.T) {
 	}
 }
 
-func TestResolveNativePushTarget_RejectsOptionLikeShortSource(t *testing.T) {
+func TestResolveNativePushTarget_IgnoresOptionLikeConfiguredSource(t *testing.T) {
 	repoPath, gitOps := newNativePushTestRepo(t)
 	configureNativePushRemote(t, repoPath, "origin", newNativeBareRepo(t))
 	runNativeTestGit(t, repoPath, "update-ref", "refs/heads/-topic", "HEAD")
@@ -317,12 +237,12 @@ func TestResolveNativePushTarget_RejectsOptionLikeShortSource(t *testing.T) {
 		"-topic:published",
 	)
 
-	_, err := gitOps.resolveNativePushTarget(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "use the fully qualified source") {
-		t.Fatalf(
-			"resolveNativePushTarget() error = %v, want fully qualified source guidance",
-			err,
-		)
+	target, err := gitOps.resolveNativePushTarget(context.Background())
+	if err != nil {
+		t.Fatalf("resolveNativePushTarget() error = %v", err)
+	}
+	if target.remoteRef != "refs/heads/-topic" {
+		t.Fatalf("resolveNativePushTarget() ref = %q, want refs/heads/-topic", target.remoteRef)
 	}
 }
 
@@ -348,7 +268,7 @@ func TestResolveNativePushRemote_PrecedenceAndAmbiguity(t *testing.T) {
 	}
 }
 
-func TestPushNative_PushesExactDestinationAndUsesItInReviewURL(t *testing.T) {
+func TestPushNative_PushesCurrentBranchDespiteRedirectingGitConfig(t *testing.T) {
 	repoPath, gitOps := newNativePushTestRepo(t)
 	remotePath := newNativeBareRepo(t)
 	configureNativePushRemoteWithURL(
@@ -359,7 +279,8 @@ func TestPushNative_PushesExactDestinationAndUsesItInReviewURL(t *testing.T) {
 		remotePath,
 	)
 	runNativeTestGit(t, repoPath, "config", "remote.pushDefault", "publish")
-	runNativeTestGit(t, repoPath, "config", "push.default", "nothing")
+	configureNativeUpstream(t, repoPath, "publish", "refs/heads/review/upstream-topic")
+	runNativeTestGit(t, repoPath, "config", "push.default", "upstream")
 	runNativeTestGit(t, repoPath, "config", "remote.publish.push", "HEAD:refs/heads/review/topic")
 	runNativeTestGit(t, repoPath, "update-ref", "refs/remotes/publish/main", "HEAD")
 	runNativeTestGit(
@@ -374,7 +295,7 @@ func TestPushNative_PushesExactDestinationAndUsesItInReviewURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pushNative() error = %v", err)
 	}
-	wantURL := "https://github.example.com/team/project/compare/main...review%2Ftopic?expand=1"
+	wantURL := "https://github.example.com/team/project/compare/main...topic?expand=1"
 	if gotURL != wantURL {
 		t.Fatalf("pushNative() URL = %q, want %q", gotURL, wantURL)
 	}
@@ -384,13 +305,18 @@ func TestPushNative_PushesExactDestinationAndUsesItInReviewURL(t *testing.T) {
 		t,
 		remotePath,
 		"rev-parse",
-		"refs/heads/review/topic",
+		"refs/heads/topic",
 	)))
 	if remoteHead != localHead {
 		t.Fatalf("remote destination = %s, want %s", remoteHead, localHead)
 	}
-	if nativeTestGitSucceeds(remotePath, "show-ref", "--verify", "--quiet", "refs/heads/topic") {
-		t.Fatal("pushNative() also created the local branch name on the remote")
+	for _, redirectedRef := range []string{
+		"refs/heads/review/topic",
+		"refs/heads/review/upstream-topic",
+	} {
+		if nativeTestGitSucceeds(remotePath, "show-ref", "--verify", "--quiet", redirectedRef) {
+			t.Fatalf("pushNative() unexpectedly created configured destination %s", redirectedRef)
+		}
 	}
 }
 
