@@ -322,12 +322,11 @@ func (g *gitOperations) nativeAttachedBranch(ctx context.Context) (string, strin
 }
 
 func (g *gitOperations) resolveNativePushRemote(ctx context.Context, branch string) (string, error) {
-	keys := []string{
+	explicitKeys := []string{
 		"branch." + branch + ".pushRemote",
 		"remote.pushDefault",
-		"branch." + branch + ".remote",
 	}
-	for _, key := range keys {
+	for _, key := range explicitKeys {
 		value, configured, err := g.nativeConfigValue(ctx, key)
 		if err != nil {
 			return "", fmt.Errorf("failed to read %s: %w", key, err)
@@ -338,6 +337,22 @@ func (g *gitOperations) resolveNativePushRemote(ctx context.Context, branch stri
 			}
 			return value, nil
 		}
+	}
+
+	branchRemoteKey := "branch." + branch + ".remote"
+	branchRemote, configured, err := g.nativeConfigValue(ctx, branchRemoteKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s: %w", branchRemoteKey, err)
+	}
+	// A branch can track another local branch through the special remote ".".
+	// Treat that as pull metadata, not as an implicit request for a successful
+	// no-op push back into the same repository. An explicit pushRemote or
+	// remote.pushDefault value of "." is still honored above.
+	if configured && branchRemote != "." {
+		if branchRemote == "" {
+			return "", fmt.Errorf("%s configures an empty push remote", branchRemoteKey)
+		}
+		return branchRemote, nil
 	}
 
 	return g.nativeFallbackRemote(ctx)

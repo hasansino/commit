@@ -268,6 +268,30 @@ func TestResolveNativePushRemote_PrecedenceAndAmbiguity(t *testing.T) {
 	}
 }
 
+func TestPushNative_LocalUpstreamFallsBackToNamedRemote(t *testing.T) {
+	repoPath, gitOps := newNativePushTestRepo(t)
+	remotePath := newNativeBareRepo(t)
+	configureNativePushRemote(t, repoPath, "origin", remotePath)
+	runNativeTestGit(t, repoPath, "branch", "master", "HEAD")
+	runNativeTestGit(t, repoPath, "config", "branch.topic.remote", ".")
+	runNativeTestGit(t, repoPath, "config", "branch.topic.merge", "refs/heads/master")
+
+	if _, err := gitOps.pushNative(context.Background()); err != nil {
+		t.Fatalf("pushNative() error = %v", err)
+	}
+
+	localHead := strings.TrimSpace(string(runNativeTestGit(t, repoPath, "rev-parse", "HEAD")))
+	remoteHead := strings.TrimSpace(string(runNativeTestGit(
+		t,
+		remotePath,
+		"rev-parse",
+		"refs/heads/topic",
+	)))
+	if remoteHead != localHead {
+		t.Fatalf("remote destination = %s, want %s", remoteHead, localHead)
+	}
+}
+
 func TestPushNative_PushesCurrentBranchDespiteRedirectingGitConfig(t *testing.T) {
 	repoPath, gitOps := newNativePushTestRepo(t)
 	remotePath := newNativeBareRepo(t)
