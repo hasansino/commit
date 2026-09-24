@@ -58,7 +58,7 @@ func (p *Local) downloadModel(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve model cache: %w", err)
 	}
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return "", fmt.Errorf("create model cache: %w", err)
 	}
 
@@ -320,6 +320,7 @@ func validateModelChecksum(path, expectedChecksum string) error {
 		return nil
 	}
 
+	// #nosec G304 -- models may use any local path explicitly selected by the user, or a cache path we construct.
 	file, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open model for checksum: %w", err)
@@ -341,6 +342,7 @@ func validateModelChecksum(path, expectedChecksum string) error {
 }
 
 func validateGGUF(path string) error {
+	// #nosec G304 -- this CLI intentionally reads the user-selected model, including paths outside its cache.
 	file, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open model %q: %w", path, err)

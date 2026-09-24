@@ -161,6 +161,9 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 		s.logger.ErrorContext(ctx, "Failed to get staged diff", "error", err)
 		return fmt.Errorf("failed to get diff: %w", err)
 	}
+	if strings.TrimSpace(diff) == "" {
+		return fmt.Errorf("staged changes produced an empty diff; cannot generate a commit message")
+	}
 
 	branch, err := s.gitOps.GetCurrentBranch(ctx)
 	if err != nil {

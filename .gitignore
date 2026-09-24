@@ -5,8 +5,22 @@
 .idea/
 .vscode
 
-# goreleaser
-dist/
+# operations
+.build/
+.tools/
+.task/
+e2e/e2e.test
 
-# artifacts
-build/
+# go42x generated files
+.go42x/go42x.local.yaml
+.go42x/kwb/
+.go42x/backups/
+.mcp.json
+.claude/
+CLAUDE.md
+.codex/
+AGENTS.md
+.gemini/
+GEMINI.md
+.crush/
+.crush.json

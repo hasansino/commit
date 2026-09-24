@@ -14,30 +14,157 @@ on:
     branches:
       - master
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: >-
+    ${{ github.event_name == 'pull_request' && format('unified-pr-{0}', github.event.pull_request.number) || format('unified-run-{0}-{1}',
+    github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
 
-  golangci-lint:
-    if: github.event_name == 'workflow_dispatch' || !endsWith(github.actor, '[bot]')
-    uses: ./.github/workflows/110-golangci-lint.yaml
+  gate-start:
+    name: gate-start
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Start full CI
+        run: echo "Full CI started."
+
+  # stage 1: linting
+
+  lint:
+    uses: ./.github/workflows/110-lint.yaml
+    permissions:
+      contents: read
+    needs:
+      - gate-start
     with:
       runs_on: ubuntu-latest
       continue_on_error: false
+      timeout_minutes: 10
+
+  # stage 2: unit and end-to-end tests
 
   unit-tests:
     uses: ./.github/workflows/120-unit-tests.yaml
+    permissions:
+      contents: read
     needs:
-      - golangci-lint
+      - lint
     with:
       runs_on: ubuntu-latest
       continue_on_error: false
+      timeout_minutes: 10
 
   e2e-tests:
-    uses: ./.github/workflows/125-e2e-tests.yaml
+    uses: ./.github/workflows/120-e2e-tests.yaml
+    permissions:
+      contents: read
     needs:
-      - golangci-lint
+      - lint
     with:
       runs_on: ubuntu-latest
       continue_on_error: false
+      timeout_minutes: 10
+
+  # stage 3: pre-build security scans
+
+  security:
+    uses: ./.github/workflows/130-security.yaml
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    needs:
+      - unit-tests
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: false
+      timeout_minutes: 15
+
+  # stage 4: build artifacts
+
+  build-artifacts:
+    uses: ./.github/workflows/140-build-artifacts.yaml
+    permissions:
+      contents: read
+    needs:
+      - unit-tests
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: false
+      timeout_minutes: 30
+
+  # stage 5: test artifacts
+
+  test-artifacts:
+    uses: ./.github/workflows/150-test-artifacts.yaml
+    permissions:
+      contents: read
+    needs:
+      - build-artifacts
+    with:
+      artifact_id: ${{ needs.build-artifacts.outputs.artifact_id }}
+      continue_on_error: false
+      timeout_minutes: 15
+
+  # stage 6: coverage report
+
+  coverage:
+    uses: ./.github/workflows/160-coverage-report.yaml
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    needs:
+      - unit-tests
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: true
+      timeout_minutes: 10
+
+  # stage 7: required finish gate
+
+  gate-finish:
+    name: gate-finish
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - gate-start
+      - lint
+      - unit-tests
+      - e2e-tests
+      - security
+      - build-artifacts
+      - test-artifacts
+    steps:
+      - name: 'Require all blocking jobs to succeed'
+        env:
+          GATE_START_RESULT: ${{ needs.gate-start.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
+          E2E_TESTS_RESULT: ${{ needs.e2e-tests.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          BUILD_ARTIFACTS_RESULT: ${{ needs.build-artifacts.result }}
+          TEST_ARTIFACTS_RESULT: ${{ needs.test-artifacts.result }}
+        run: |-
+          echo "gate-start: $GATE_START_RESULT"
+          echo "lint: $LINT_RESULT"
+          echo "unit-tests: $UNIT_TESTS_RESULT"
+          echo "e2e-tests: $E2E_TESTS_RESULT"
+          echo "security: $SECURITY_RESULT"
+          echo "build-artifacts: $BUILD_ARTIFACTS_RESULT"
+          echo "test-artifacts: $TEST_ARTIFACTS_RESULT"
+          if [ "$GATE_START_RESULT" != 'success' ] || \
+            [ "$LINT_RESULT" != 'success' ] || \
+            [ "$UNIT_TESTS_RESULT" != 'success' ] || \
+            [ "$E2E_TESTS_RESULT" != 'success' ] || \
+            [ "$SECURITY_RESULT" != 'success' ] || \
+            [ "$BUILD_ARTIFACTS_RESULT" != 'success' ] || \
+            [ "$TEST_ARTIFACTS_RESULT" != 'success' ]; then
+            echo '::error::One or more blocking CI jobs did not succeed.'
+            exit 1
+          fi

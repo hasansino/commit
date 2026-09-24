@@ -99,6 +99,26 @@ func startCLI(
 	return session
 }
 
+func startCLIWithPausedProvider(
+	ctx SpecContext,
+	repository *gitRepository,
+	arguments ...string,
+) (*gexec.Session, *fakeAI, func()) {
+	GinkgoHelper()
+	release := make(chan struct{})
+	releaseProvider := sync.OnceFunc(func() { close(release) })
+	api := newFakeAI()
+	api.setReply(providerOpenAI, apiReply{Message: defaultAIResponse, Release: release})
+	options := openAIOptions(api)
+	options.GlobalConfig = repository.GlobalConfig
+	arguments = append([]string{"--auto", "--providers=openai", "--timeout=30s"}, arguments...)
+	session := startCLI(ctx, repository.Path, options, arguments...)
+	DeferCleanup(releaseProvider)
+	Eventually(func() int { return len(api.requestsFor(providerOpenAI)) }).
+		WithContext(ctx).WithTimeout(commandTimeout).Should(Equal(1))
+	return session, api, releaseProvider
+}
+
 func stopSession(session *gexec.Session) {
 	if session.ExitCode() == -1 {
 		session.Kill()
@@ -323,6 +343,33 @@ func (r *gitRepository) gitPath(name string) string {
 		path = filepath.Join(r.Path, path)
 	}
 	return filepath.Clean(path)
+}
+
+func privateStagingFiles(repository *gitRepository) []string {
+	GinkgoHelper()
+	files, err := filepath.Glob(filepath.Join(filepath.Dir(repository.gitPath("index")), ".commit-index-*"))
+	Expect(err).NotTo(HaveOccurred())
+	return files
+}
+
+func writeHook(repository *gitRepository, name, contents string) {
+	GinkgoHelper()
+	directory := repository.gitPath("hooks")
+	Expect(os.MkdirAll(directory, 0o700)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(directory, name), []byte(contents), 0o700)).To(Succeed())
+}
+
+func repositoryOptions(repository *gitRepository) runOptions {
+	GinkgoHelper()
+	options := openAIOptions(newFakeAI())
+	options.GlobalConfig = repository.GlobalConfig
+	return options
+}
+
+func expectNoStagingArtifacts(repository *gitRepository) {
+	GinkgoHelper()
+	Expect(privateStagingFiles(repository)).To(BeEmpty())
+	Expect(repository.gitPath("index") + ".lock").NotTo(BeAnExistingFile())
 }
 
 func newBareRemote(globalConfig string) string {

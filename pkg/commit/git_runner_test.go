@@ -1,11 +1,34 @@
 package commit
 
 import (
-	"os"
-	"os/exec"
-	"strings"
+	"context"
+	"errors"
+	"path/filepath"
 	"testing"
 )
+
+func TestGitStateMethodsReturnCommandErrors(t *testing.T) {
+	gitOps := &gitOperations{gitPath: filepath.Join(t.TempDir(), "missing-git")}
+	ctx := context.Background()
+	if state, err := gitOps.GetRepoState(ctx); err == nil || state != RepoStateNormal {
+		t.Fatalf("GetRepoState() = (%q, %v), want normal state and a command error", state, err)
+	}
+	if conflicts, files, err := gitOps.HasConflicts(ctx); err == nil || conflicts || files != nil {
+		t.Fatalf("HasConflicts() = (%v, %q, %v), want no files and a command error", conflicts, files, err)
+	}
+}
+
+func TestGitOperationsHonorCancellationBeforeDispatch(t *testing.T) {
+	gitOps := &gitOperations{gitPath: filepath.Join(t.TempDir(), "missing-git")}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := gitOps.pushNative(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pushNative() error = %v, want context.Canceled", err)
+	}
+	if err := gitOps.createTagNative(ctx, "v1.2.3", "message"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("createTagNative() error = %v, want context.Canceled", err)
+	}
+}
 
 func TestParseGitVersion(t *testing.T) {
 	t.Parallel()
@@ -53,16 +76,47 @@ func TestSanitizedGitEnvironmentIsCaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestNewGitOperationsRejectsReftable(t *testing.T) {
-	repoPath := t.TempDir()
-	cmd := exec.Command("git", "-C", repoPath, "init", "-q", "--ref-format=reftable")
-	cmd.Env = sanitizedGitEnvironment(os.Environ())
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Skipf("installed Git does not support reftable fixtures: %v: %s", err, output)
+func TestGitCommandMayUseTerminalFindsSubcommandAfterGlobalOptions(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{
+			name: "commit after config",
+			args: []string{"-c", "core.logAllRefUpdates=true", "commit", "--file", "message"},
+			want: true,
+		},
+		{
+			name: "add after literal pathspecs",
+			args: []string{"--literal-pathspecs", "add", "--pathspec-from-file=-"},
+			want: true,
+		},
+		{
+			name: "add after config and literal pathspecs",
+			args: []string{
+				"-c", "core.excludesFile=/tmp/empty", "--literal-pathspecs",
+				"add", "--pathspec-from-file=-", "--pathspec-file-nul",
+			},
+			want: true,
+		},
+		{
+			name: "noninteractive diff after literal pathspecs",
+			args: []string{"--literal-pathspecs", "diff", "--cached"},
+			want: false,
+		},
+		{
+			name: "incomplete config option",
+			args: []string{"-c"},
+			want: false,
+		},
 	}
 
-	_, err := newGitOperations(repoPath)
-	if err == nil || !strings.Contains(err.Error(), "reftable repositories are not supported") {
-		t.Fatalf("newGitOperations(reftable) error = %v, want explicit rejection", err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := gitCommandMayUseTerminal(nil, test.args); got != test.want {
+				t.Fatalf("gitCommandMayUseTerminal(nil, %q) = %v, want %v", test.args, got, test.want)
+			}
+		})
 	}
 }

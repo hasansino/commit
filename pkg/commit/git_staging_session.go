@@ -498,6 +498,7 @@ func (g *gitOperations) createPrivateIndex(
 	indexPath string,
 	original indexSnapshot,
 ) (_ string, retErr error) {
+	// #nosec G301 -- preserve Git's shared directory access; private index files themselves use mode 0600.
 	if err := os.MkdirAll(filepath.Dir(indexPath), 0o755); err != nil {
 		return "", fmt.Errorf("failed to create private index directory: %w", err)
 	}
@@ -568,6 +569,7 @@ func snapshotIndex(indexPath string) (indexSnapshot, error) {
 	if !info.Mode().IsRegular() {
 		return indexSnapshot{}, fmt.Errorf("git index is not a regular file")
 	}
+	// #nosec G304 -- Git resolves this repository's index path, including linked worktrees and external indexes.
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		return indexSnapshot{}, err
@@ -617,9 +619,11 @@ func (g *gitOperations) acquireHeadLocks(
 
 func acquirePathLock(path, description string) (*os.File, error) {
 	lockPath := path + ".lock"
+	// #nosec G301 -- Git reference directories may be shared; the lock file itself uses mode 0600.
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create %s lock directory: %w", description, err)
 	}
+	// #nosec G304 -- lock the Git-resolved index/reference path; O_EXCL rejects existing files and symlinks.
 	lock, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		if os.IsExist(err) {

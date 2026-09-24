@@ -87,7 +87,11 @@ var _ = Describe("CLI contract", func() {
 		result := runCLI(ctx, GinkgoT().TempDir(), runOptions{}, "version")
 
 		Expect(result.ExitCode).To(Equal(0))
-		Expect(result.Stdout).To(MatchRegexp(`(?m)^Version:\s+\S+`))
+		if commitVersion != "" {
+			Expect(result.Stdout).To(ContainSubstring("Version: " + commitVersion + "\n"))
+		} else {
+			Expect(result.Stdout).To(MatchRegexp(`(?m)^Version:\s+\S+`))
+		}
 		Expect(result.Stdout).To(MatchRegexp(`(?m)^Go:\s+go\d+`))
 		Expect(result.Stdout).To(ContainSubstring("OS/Arch: " + runtime.GOOS + "/" + runtime.GOARCH))
 		Expect(result.Stderr).To(BeEmpty())
@@ -100,7 +104,8 @@ var _ = Describe("CLI contract", func() {
 		Expect(result.Stderr).To(ContainSubstring("unknown flag: --not-a-real-flag"))
 	})
 
-	DescribeTable("validates public settings before performing work",
+	DescribeTable(
+		"validates public settings before performing work",
 		func(ctx SpecContext, argument, expectedError string) {
 			repository := newRepository()
 			api := newFakeAI()
@@ -119,7 +124,12 @@ var _ = Describe("CLI contract", func() {
 			Expect(api.requestsFor(providerOpenAI)).To(BeEmpty())
 		},
 		Entry("a zero timeout", "--timeout=0s", "timeout must be greater than zero"),
-		Entry("a negative maximum diff size", "--max-diff-size-bytes=-1", "max diff size bytes cannot be negative"),
+		Entry(
+			"a negative maximum diff size",
+			"--max-diff-size-bytes=-1",
+			"max diff size bytes must be greater than zero",
+		),
+		Entry("a zero maximum diff size", "--max-diff-size-bytes=0", "max diff size bytes must be greater than zero"),
 		Entry("an unknown tag increment", "--tag=calendar", "invalid tag increment type: calendar"),
 		Entry("an unknown Jira position", "--jira-task-position=middle", "invalid jira task position: middle"),
 		Entry("an unknown Jira style", "--jira-task-style=curly", "invalid jira task style: curly"),
@@ -219,6 +229,7 @@ var _ = Describe("Repository preconditions", func() {
 
 	It("returns successfully without calling AI when there are no changes", func(ctx SpecContext) {
 		repository := newRepository()
+		beforeIndex := repository.indexBytes()
 		api := newFakeAI()
 		options := openAIOptions(api)
 		options.GlobalConfig = repository.GlobalConfig
@@ -229,6 +240,8 @@ var _ = Describe("Repository preconditions", func() {
 		Expect(result.Output()).To(ContainSubstring("No files to commit"))
 		Expect(api.requestsFor(providerOpenAI)).To(BeEmpty())
 		Expect(repository.head()).To(Equal(repository.InitialHead))
+		Expect(repository.indexBytes()).To(Equal(beforeIndex))
+		Expect(privateStagingFiles(repository)).To(BeEmpty())
 	})
 
 	DescribeTable("rejects an in-progress repository operation",

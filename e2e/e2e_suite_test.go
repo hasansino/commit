@@ -1,8 +1,10 @@
 package e2e_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/onsi/gomega/gexec"
@@ -18,18 +20,36 @@ func TestE2E(t *testing.T) {
 
 var (
 	commitBinary         string
+	commitVersion        string
+	releaseDirectory     string
 	outboundDenyProxy    *httptest.Server
 	outboundDenyProxyURL string
 )
 
+type suiteBinary struct {
+	Path    string
+	Version string
+}
+
 var _ = SynchronizedBeforeSuite(
 	func() []byte {
-		path, err := gexec.Build("github.com/hasansino/commit", "-race")
+		var binary suiteBinary
+		var err error
+		if dist, present := os.LookupEnv("COMMIT_RELEASE_DIST"); present {
+			Expect(dist).NotTo(BeEmpty(), "COMMIT_RELEASE_DIST must name a release bundle")
+			binary.Path, binary.Version, releaseDirectory, err = prepareReleaseBinary(dist)
+		} else {
+			binary.Path, err = gexec.Build("github.com/hasansino/commit", "-race")
+		}
 		Expect(err).NotTo(HaveOccurred())
-		return []byte(path)
+		data, err := json.Marshal(binary)
+		Expect(err).NotTo(HaveOccurred())
+		return data
 	},
-	func(path []byte) {
-		commitBinary = string(path)
+	func(data []byte) {
+		var binary suiteBinary
+		Expect(json.Unmarshal(data, &binary)).To(Succeed())
+		commitBinary, commitVersion = binary.Path, binary.Version
 		outboundDenyProxy = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			http.Error(writer, "outbound network access is disabled in e2e tests", http.StatusBadGateway)
 		}))
@@ -44,6 +64,9 @@ var _ = SynchronizedAfterSuite(
 		}
 	},
 	func() {
+		if releaseDirectory != "" {
+			Expect(os.RemoveAll(releaseDirectory)).To(Succeed())
+		}
 		gexec.CleanupBuildArtifacts()
 	},
 )

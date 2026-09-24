@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -427,9 +428,7 @@ func TestAIService_GenerateCommitMessages_AllProviders(t *testing.T) {
 	}
 }
 
-func TestAIService_GenerateCommitMessages_CompactsOnlyLocalProviderDiff(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
+func TestAIService_GenerateCommitMessages_SendsSameDiffToAllProviders(t *testing.T) {
 	var diff strings.Builder
 	for index := range 3 {
 		name := fmt.Sprintf("file%d.go", index)
@@ -437,47 +436,97 @@ func TestAIService_GenerateCommitMessages_CompactsOnlyLocalProviderDiff(t *testi
 		diff.WriteString(strings.Repeat("+changed content for local inference\n", 400))
 	}
 	fullDiff := diff.String()
-
-	localProvider := mocks.NewMockproviderAccessor(ctrl)
-	localProvider.EXPECT().Name().Return("local").AnyTimes()
-	localProvider.EXPECT().IsLocal().Return(true)
-	localProvider.EXPECT().Ask(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, prompt string) ([]string, error) {
-			if len(prompt) > localMaxDiffSizeBytes {
-				t.Errorf("local prompt size = %d, want at most %d", len(prompt), localMaxDiffSizeBytes)
-			}
-			for index := range 3 {
-				header := fmt.Sprintf("diff --git a/file%d.go b/file%d.go", index, index)
-				if !strings.Contains(prompt, header) {
-					t.Errorf("local prompt omitted %q", header)
-				}
-			}
-			return []string{"local message"}, nil
-		},
-	)
-
-	cloudProvider := mocks.NewMockproviderAccessor(ctrl)
-	cloudProvider.EXPECT().Name().Return("cloud").AnyTimes()
-	cloudProvider.EXPECT().IsLocal().Return(false)
-	cloudProvider.EXPECT().Ask(gomock.Any(), fullDiff).Return([]string{"cloud message"}, nil)
-
-	service := &aiService{
-		logger:  slog.New(slog.DiscardHandler),
-		timeout: time.Second,
-		providers: map[string]providerAccessor{
-			"local": localProvider,
-			"cloud": cloudProvider,
-		},
+	if len(fullDiff) <= 24*1024 || len(fullDiff) > 64*1024 {
+		t.Fatalf("fixture diff size = %d, want above the former local cap and below the default limit", len(fullDiff))
 	}
 
-	messages, err := service.GenerateCommitMessages(
-		context.Background(), fullDiff, "main", nil, nil, "{diff}", false,
-	)
-	if err != nil {
-		t.Fatalf("GenerateCommitMessages() error = %v", err)
+	for _, customPrompt := range []string{"", "branch={branch}\nfiles={files}\ndiff={diff}"} {
+		name := "default prompt"
+		if customPrompt != "" {
+			name = "custom prompt"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			prompts := make(chan string, 2)
+			providers := make(map[string]providerAccessor)
+			for _, name := range []string{"local", "cloud"} {
+				provider := mocks.NewMockproviderAccessor(ctrl)
+				provider.EXPECT().Name().Return(name).AnyTimes()
+				provider.EXPECT().IsLocal().Return(name == "local")
+				provider.EXPECT().Ask(gomock.Any(), gomock.Any()).DoAndReturn(
+					func(_ context.Context, prompt string) ([]string, error) {
+						if !strings.Contains(prompt, fullDiff) {
+							t.Errorf("%s prompt omitted part of the supplied diff", name)
+						}
+						prompts <- prompt
+						return []string{name + " message"}, nil
+					},
+				)
+				providers[name] = provider
+			}
+
+			service := &aiService{
+				logger:    slog.New(slog.DiscardHandler),
+				timeout:   time.Second,
+				providers: providers,
+			}
+
+			messages, err := service.GenerateCommitMessages(
+				context.Background(),
+				fullDiff,
+				"main",
+				[]string{"file0.go", "file1.go", "file2.go"},
+				nil,
+				customPrompt,
+				false,
+			)
+			if err != nil {
+				t.Fatalf("GenerateCommitMessages() error = %v", err)
+			}
+			if len(messages) != 2 {
+				t.Fatalf("GenerateCommitMessages() = %#v, want two messages", messages)
+			}
+			firstPrompt, secondPrompt := <-prompts, <-prompts
+			if firstPrompt != secondPrompt {
+				t.Error("local and cloud providers received different prompts")
+			}
+		})
 	}
-	if len(messages) != 2 {
-		t.Fatalf("GenerateCommitMessages() = %#v, want two messages", messages)
+}
+
+func TestAIService_AskProvider_TimeoutAndCancellation(t *testing.T) {
+	for _, isLocal := range []bool{true, false} {
+		name := "cloud"
+		if isLocal {
+			name = "local"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			service := &aiService{timeout: time.Minute}
+
+			provider := mocks.NewMockproviderAccessor(ctrl)
+			provider.EXPECT().IsLocal().Return(isLocal)
+			provider.EXPECT().Ask(gomock.Any(), "prompt").DoAndReturn(
+				func(requestCtx context.Context, _ string) ([]string, error) {
+					deadline, hasDeadline := requestCtx.Deadline()
+					if isLocal {
+						if requestCtx != ctx || hasDeadline {
+							t.Error("local provider must receive the parent context without an added timeout")
+						}
+					} else if !hasDeadline || time.Until(deadline) <= 0 || time.Until(deadline) > service.timeout {
+						t.Error("cloud provider must receive the configured request timeout")
+					}
+					cancel()
+					return nil, requestCtx.Err()
+				},
+			)
+
+			if _, err := service.askProvider(ctx, provider, "prompt"); !errors.Is(err, context.Canceled) {
+				t.Fatalf("askProvider() error = %v, want parent cancellation", err)
+			}
+		})
 	}
 }
 

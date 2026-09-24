@@ -37,6 +37,12 @@ func awaitGitCommandExit(pid int) error {
 		if errors.Is(eventErr, syscall.EINTR) {
 			continue
 		}
+		// A fast child can exit before EVFILT_PROC attaches. Darwin's
+		// proc_find excludes zombies, so registration then returns ESRCH.
+		// We have not called Wait: the unreaped child still reserves its PID.
+		if errors.Is(eventErr, syscall.ESRCH) {
+			return nil
+		}
 		if eventErr != nil {
 			return eventErr
 		}
@@ -45,6 +51,12 @@ func awaitGitCommandExit(pid int) error {
 		}
 		event := events[0]
 		if event.Flags&unix.EV_ERROR != 0 && event.Data != 0 {
+			// Registration errors normally arrive in the event when there is
+			// space in the event list, rather than as the syscall's error.
+			if event.Data == int64(syscall.ESRCH) {
+				return nil
+			}
+			// #nosec G115 -- EV_ERROR data is a positive kernel errno, which fits uintptr on supported Darwin targets.
 			return syscall.Errno(event.Data)
 		}
 		if event.Fflags&unix.NOTE_EXIT != 0 {

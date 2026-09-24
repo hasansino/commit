@@ -108,8 +108,8 @@ func (g *gitOperations) GetStagedDiff(
 	session *models.StagingSessionState,
 	maxSizeBytes int,
 ) (string, error) {
-	if maxSizeBytes < 0 {
-		return "", fmt.Errorf("maximum diff size must not be negative")
+	if maxSizeBytes <= 0 {
+		return "", fmt.Errorf("maximum diff size must be greater than zero")
 	}
 	if err := g.validateStagingSession(session); err != nil {
 		return "", err
@@ -149,10 +149,10 @@ func (g *gitOperations) GetStagedDiff(
 			return "", fmt.Errorf("failed to get staged diff: %w", err)
 		}
 		if len(diff) <= maxSizeBytes {
-			return string(diff), nil
+			return compactUnifiedDiff(string(diff), maxSizeBytes)
 		}
 	}
-	return compactUnifiedDiff(string(diff), maxSizeBytes), nil
+	return compactUnifiedDiff(string(diff), maxSizeBytes)
 }
 
 func splitNullTerminated(output []byte) []string {

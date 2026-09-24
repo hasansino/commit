@@ -71,6 +71,7 @@ func generateWithLlamaCLI(
 		"--offline",
 	}
 
+	// #nosec G204 -- llama-cli is resolved from the user's PATH; arguments never pass through a shell.
 	command := exec.CommandContext(inferenceCtx, executable, args...)
 	var stderr bytes.Buffer
 	command.Stdout = io.Discard
@@ -83,6 +84,7 @@ func generateWithLlamaCLI(
 		return "", formatCommandError(err, stderr.String())
 	}
 
+	// #nosec G304 -- outputPath is the private file created above with os.CreateTemp.
 	output, err := os.ReadFile(outputPath)
 	if err != nil {
 		return "", fmt.Errorf("read llama-cli output: %w", err)

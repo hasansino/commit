@@ -9,6 +9,39 @@ import (
 )
 
 var _ = Describe("Version tags", func() {
+	It("selects and increments tags larger than a machine integer", func(ctx SpecContext) {
+		repository := newRepository()
+		repository.git("config", "tag.gpgsign", "false")
+		for _, tag := range []string{
+			"v1.2.9", "v1.10.0", "v2.0.0-rc.1", "release-v9.0.0", "v999999999999999999999999.0.0",
+		} {
+			repository.git("tag", tag)
+		}
+		repository.append("tracked.txt", "large release version\n")
+		result := runCLI(ctx, repository.Path, repositoryOptions(repository),
+			"--auto", "--providers=openai", "--tag=major")
+		Expect(result.ExitCode).To(Equal(0), result.Output())
+		Expect(repository.git("rev-parse", "refs/tags/v1000000000000000000000000.0.0^{}")).
+			To(Equal(repository.head() + "\n"))
+	})
+
+	It("preserves the exact multiline message in an annotated tag and pushes that object", func(ctx SpecContext) {
+		repository := newPushRepository()
+		remote := newBareRemote(repository.GlobalConfig)
+		repository.git("remote", "add", "origin", remote)
+		message := "release heading\n\n-message body without shell interpretation"
+		options := repositoryOptions(repository)
+		options.API.setReply(providerOpenAI, apiReply{Message: message})
+		result := runCLI(ctx, repository.Path, options,
+			"--auto", "--providers=openai", "--multi-line", "--push", "--tag=patch")
+		Expect(result.ExitCode).To(Equal(0), result.Output())
+		Expect(repository.git("cat-file", "-t", "refs/tags/v0.0.1")).To(Equal("tag\n"))
+		Expect(repository.git("cat-file", "-p", "refs/tags/v0.0.1")).To(HaveSuffix("\n\n" + message + "\n"))
+		objectID := strings.TrimSpace(repository.git("rev-parse", "refs/tags/v0.0.1"))
+		Expect(repository.git("ls-remote", remote, "refs/tags/v0.0.1")).
+			To(Equal(objectID + "\trefs/tags/v0.0.1\n"))
+	})
+
 	DescribeTable("creates the first semantic version tag",
 		func(ctx SpecContext, increment, expectedTag string) {
 			repository := newRepository()

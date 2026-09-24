@@ -26,8 +26,6 @@ var promptFormatSingle string
 //go:embed prompt-format-multi.md
 var promptFormatMulti string
 
-const localMaxDiffSizeBytes = 24 * 1024
-
 type aiService struct {
 	logger    *slog.Logger
 	timeout   time.Duration
@@ -96,6 +94,13 @@ func (s *aiService) GenerateCommitMessages(
 		return nil, fmt.Errorf("no ai providers available")
 	}
 
+	var prompt string
+	if len(customPrompt) > 0 {
+		prompt = s.buildCustomPrompt(customPrompt, diff, branch, files)
+	} else {
+		prompt = s.buildPrompt(diff, branch, files, multiLine)
+	}
+
 	type providerResponse struct {
 		Name    string
 		Message string
@@ -107,21 +112,8 @@ func (s *aiService) GenerateCommitMessages(
 	resultChan := make(chan providerResponse, len(activeProviders))
 
 	for _, provider := range activeProviders {
-		isLocal := provider.IsLocal()
-		providerDiff := diff
-		if isLocal {
-			providerDiff = compactUnifiedDiff(diff, localMaxDiffSizeBytes)
-		}
-
-		var prompt string
-		if len(customPrompt) > 0 {
-			prompt = s.buildCustomPrompt(customPrompt, providerDiff, branch, files)
-		} else {
-			prompt = s.buildPrompt(providerDiff, branch, files, multiLine)
-		}
-
 		wg.Add(1)
-		go func(ctx context.Context, provider providerAccessor, prompt string, isLocal bool) {
+		go func(ctx context.Context, provider providerAccessor) {
 			defer wg.Done()
 
 			s.logger.DebugContext(
@@ -130,7 +122,7 @@ func (s *aiService) GenerateCommitMessages(
 			)
 
 			started := time.Now()
-			messages, err := s.askProvider(ctx, provider, prompt, isLocal)
+			messages, err := s.askProvider(ctx, provider, prompt)
 			duration := time.Since(started)
 
 			if err != nil {
@@ -182,7 +174,7 @@ func (s *aiService) GenerateCommitMessages(
 				Message: message,
 				Time:    duration,
 			}
-		}(ctx, provider, prompt, isLocal)
+		}(ctx, provider)
 	}
 
 	results := make(map[string]string)
@@ -213,9 +205,8 @@ func (s *aiService) askProvider(
 	ctx context.Context,
 	provider providerAccessor,
 	prompt string,
-	isLocal bool,
 ) ([]string, error) {
-	if isLocal {
+	if provider.IsLocal() {
 		return provider.Ask(ctx, prompt)
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, s.timeout)

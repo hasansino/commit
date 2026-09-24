@@ -47,6 +47,7 @@ func (e *gitCommandError) ExitCode() (int, bool) {
 }
 
 func (g *gitOperations) gitCommandContext(ctx context.Context, args ...string) *exec.Cmd {
+	// #nosec G204 -- gitPath comes from exec.LookPath("git"); Git receives argument vectors without a shell.
 	cmd := exec.CommandContext(ctx, g.gitPath, args...)
 	configureGitCommandCancellation(cmd)
 	cmd.WaitDelay = gitCommandWaitDelay

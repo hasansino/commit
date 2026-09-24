@@ -14,121 +14,31 @@ import (
 	"github.com/hasansino/commit/pkg/commit/models"
 )
 
-func TestNewCommitService(t *testing.T) {
-	tests := []struct {
-		name        string
-		settings    *Settings
-		opts        []Option
-		expectErr   bool
-		errContains string
+// Successful construction is exercised through the CLI, including provider and
+// Jira setup. Invalid settings must fail before initializing Git.
+func TestNewCommitServiceRejectsInvalidSettings(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		settings *Settings
 	}{
-		{
-			name: "valid settings",
-			settings: &Settings{
-				Providers:          []string{"local"},
-				Timeout:            30 * time.Second,
-				CustomPrompt:       "",
-				Auto:               false,
-				DryRun:             false,
-				ExcludePatterns:    []string{},
-				IncludePatterns:    []string{},
-				MultiLine:          false,
-				Push:               false,
-				Tag:                "",
-				UseGlobalGitignore: false,
-				JiraTaskPosition:   "none",
-				JiraTaskStyle:      "brackets",
-			},
-			opts:      []Option{},
-			expectErr: false,
-		},
-		{
-			name:        "nil settings",
-			settings:    nil,
-			opts:        []Option{},
-			expectErr:   true,
-			errContains: "invalid options",
-		},
-		{
-			name: "invalid settings - zero timeout",
-			settings: &Settings{
-				Timeout: 0,
-			},
-			opts:        []Option{},
-			expectErr:   true,
-			errContains: "invalid options",
-		},
-		{
-			name: "valid settings with logger option",
-			settings: &Settings{
-				Providers: []string{"local"},
-				Timeout:   30 * time.Second,
-			},
-			opts: []Option{
-				WithLogger(slog.New(slog.DiscardHandler)),
-			},
-			expectErr: false,
-		},
-		{
-			name: "valid settings with jira transform",
-			settings: &Settings{
-				Providers:        []string{"local"},
-				Timeout:          30 * time.Second,
-				JiraTaskPosition: "suffix",
-				JiraTaskStyle:    "brackets",
-			},
-			opts:      []Option{},
-			expectErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			service, err := NewCommitService(tt.settings, tt.opts...)
-
-			if tt.expectErr {
-				if err == nil {
-					t.Errorf("NewCommitService() expected error but got none")
-					return
-				}
-				if tt.errContains != "" && !containsString(err.Error(), tt.errContains) {
-					t.Errorf("NewCommitService() error = %q, want to contain %q", err.Error(), tt.errContains)
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("NewCommitService() unexpected error = %v", err)
-				return
-			}
-
-			if service == nil {
-				t.Error("NewCommitService() returned nil service")
-				return
-			}
-
-			if service.settings != tt.settings {
-				t.Error("NewCommitService() did not set settings correctly")
-			}
-
-			if service.logger == nil {
-				t.Error("NewCommitService() should set a default logger if none provided")
-			}
-
-			if service.gitOps == nil {
-				t.Error("NewCommitService() should initialize git operations")
-			}
-
-			if service.aiService == nil {
-				t.Error("NewCommitService() should initialize AI service")
-			}
-
-			if tt.settings.JiraTaskPosition != "" && tt.settings.JiraTaskPosition != "none" {
-				if len(service.modules) == 0 {
-					t.Error("NewCommitService() should initialize jira module when JiraTaskPosition is set")
-				}
+		{name: "nil settings"},
+		{name: "zero timeout", settings: &Settings{Timeout: 0}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service, err := NewCommitService(test.settings)
+			if err == nil || !containsString(err.Error(), "invalid options") || service != nil {
+				t.Fatalf("NewCommitService() = (%v, %v), want nil service and invalid options", service, err)
 			}
 		})
+	}
+}
+
+func TestWithLogger(t *testing.T) {
+	service := &Service{}
+	logger := slog.New(slog.DiscardHandler)
+	WithLogger(logger)(service)
+	if service.logger != logger {
+		t.Fatal("WithLogger did not retain the supplied logger")
 	}
 }
 
@@ -573,7 +483,7 @@ func TestService_Execute(t *testing.T) {
 			errContains: "failed to finalize staging: cleanup error",
 		},
 		{
-			name: "staged files remain authoritative when presentation diff is empty",
+			name: "empty presentation diff fails before requesting AI messages",
 			settings: &Settings{
 				Timeout: 30 * time.Second,
 				Auto:    true,
@@ -586,9 +496,9 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
 				session := expectStagingSession(git, []string{"file.go"}, false, nil)
 				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("", nil)
-				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
 			},
-			wantErr: false,
+			wantErr:     true,
+			errContains: "staged changes produced an empty diff",
 		},
 		{
 			name: "get current branch error",

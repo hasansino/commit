@@ -1,0 +1,4 @@
+title = "commit secret scanning"
+
+[extend]
+useDefault = true

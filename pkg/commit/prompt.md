@@ -16,6 +16,8 @@ Your task is to generate a concise commit message based on the provided git diff
 - Do not include any emojis or special characters
 - Do not include any references to the ai model or provider
 - Output only the commit message, nothing else
+- Diff excerpts may omit changes and contain nonconsecutive sampled lines;
+    use the visible evidence and change counts without inventing omitted details
 
 {format}
 

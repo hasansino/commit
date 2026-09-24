@@ -1,7 +1,11 @@
 package e2e_test
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -270,36 +274,110 @@ var _ = Describe("Prompt construction", func() {
 			"--dry-run",
 			"--providers=openai",
 			"--prompt={diff}",
-			"--max-diff-size-bytes=128",
+			"--max-diff-size-bytes=512",
 		)
 
 		Expect(result.ExitCode).To(Equal(0))
 		requests := api.requestsFor(providerOpenAI)
 		Expect(requests).To(HaveLen(1))
-		Expect([]byte(requests[0].Prompt)).To(HaveLen(128))
+		Expect(len(requests[0].Prompt)).To(BeNumerically("<=", 512))
+		Expect(requests[0].Prompt).To(ContainSubstring("Diff excerpts"))
+		Expect(requests[0].Prompt).To(ContainSubstring("+a long changed line for truncation\n"))
 	})
 
-	It("commits staged state when the prompt diff limit is zero", func(ctx SpecContext) {
-		repository := newRepository()
-		repository.append("tracked.txt", "invisible diff\n")
-		api := newFakeAI()
-		options := openAIOptions(api)
-		options.GlobalConfig = repository.GlobalConfig
+	DescribeTable("rejects unusable diff limits before calling AI",
+		func(ctx SpecContext, limit, expectedError string) {
+			repository := newRepository()
+			repository.append("tracked.txt", "must not commit without a useful diff\n")
+			beforeIndex := repository.indexBytes()
+			beforeStatus := repository.status()
+			api := newFakeAI()
+			options := openAIOptions(api)
+			options.GlobalConfig = repository.GlobalConfig
+			tracePath := filepath.Join(GinkgoT().TempDir(), "git-trace.json")
+			options.Environment = map[string]string{"GIT_TRACE2_EVENT": tracePath}
 
-		result := runCLI(
-			ctx,
-			repository.Path,
-			options,
-			"--auto",
-			"--providers=openai",
-			"--max-diff-size-bytes=0",
-		)
+			result := runCLI(ctx, repository.Path, options,
+				"--auto", "--providers=openai", "--max-diff-size-bytes="+limit)
 
-		Expect(result.ExitCode).To(Equal(0))
-		Expect(result.Output()).To(ContainSubstring("Commit created"))
-		Expect(api.requestsFor(providerOpenAI)).To(HaveLen(1))
-		Expect(repository.head()).NotTo(Equal(repository.InitialHead))
-		Expect(repository.git("show", "HEAD:tracked.txt")).To(ContainSubstring("invisible diff"))
-		Expect(repository.git("diff", "--cached", "--name-only")).To(BeEmpty())
-	})
+			Expect(result.ExitCode).To(Equal(1))
+			Expect(result.Output()).To(ContainSubstring(expectedError))
+			Expect(api.requestsFor(providerOpenAI)).To(BeEmpty())
+			Expect(repository.head()).To(Equal(repository.InitialHead))
+			Expect(repository.indexBytes()).To(Equal(beforeIndex))
+			Expect(repository.status()).To(Equal(beforeStatus))
+			Expect(privateStagingFiles(repository)).To(BeEmpty())
+			if limit == "1" {
+				trace, err := os.ReadFile(tracePath)
+				Expect(err).NotTo(HaveOccurred())
+				zeroContextDiffs := 0
+				for _, line := range strings.Split(strings.TrimSpace(string(trace)), "\n") {
+					var event struct {
+						Event string   `json:"event"`
+						Argv  []string `json:"argv"`
+					}
+					Expect(json.Unmarshal([]byte(line), &event)).To(Succeed())
+					if event.Event == "start" && slices.Contains(event.Argv, "diff") &&
+						slices.Contains(event.Argv, "--cached") && slices.Contains(event.Argv, "-U0") {
+						zeroContextDiffs++
+					}
+				}
+				Expect(zeroContextDiffs).To(Equal(1), "the smallest diff should only be requested once")
+			}
+		},
+		Entry("zero", "0", "max diff size bytes must be greater than zero"),
+		Entry("too small for a file summary", "1", "too small to describe staged changes"),
+	)
+
+	DescribeTable("sends both sides of a large replacement and commits the exact snapshot",
+		func(ctx SpecContext, staged bool) {
+			repository := newRepository()
+			oldContent := strings.Repeat(
+				"old implementation with enough content to exceed the default diff limit\n",
+				3000,
+			)
+			newContent := strings.Repeat(
+				"new implementation with enough content to exceed the default diff limit\n",
+				3000,
+			)
+			repository.write("tracked.txt", oldContent)
+			repository.git("add", "tracked.txt")
+			repository.git("commit", "--no-gpg-sign", "-m", "test: seed large file")
+			repository.write("tracked.txt", newContent)
+			if staged {
+				repository.git("add", "tracked.txt")
+				repository.append("tracked.txt", "unstaged-marker-must-stay-out\n")
+				repository.write("unrelated.txt", "untracked-marker-must-stay-out\n")
+			}
+			api := newFakeAI()
+			options := openAIOptions(api)
+			options.GlobalConfig = repository.GlobalConfig
+
+			result := runCLI(ctx, repository.Path, options,
+				"--auto", "--providers=openai", "--prompt={diff}")
+
+			Expect(result.ExitCode).To(Equal(0), result.Output())
+			requests := api.requestsFor(providerOpenAI)
+			Expect(requests).To(HaveLen(1))
+			prompt := requests[0].Prompt
+			Expect(len(prompt)).To(BeNumerically("<=", 64*1024))
+			Expect(prompt).To(ContainSubstring("Diff excerpts"))
+			Expect(prompt).To(ContainSubstring("-old implementation"))
+			Expect(prompt).To(ContainSubstring("+new implementation"))
+			Expect(prompt).To(ContainSubstring("File totals: +3000 -3000 lines"))
+			Expect(prompt).To(ContainSubstring("Omitted lines:"))
+			Expect(prompt).NotTo(ContainSubstring("unstaged-marker"))
+			Expect(prompt).NotTo(ContainSubstring("untracked-marker"))
+			Expect(repository.git("show", "HEAD:tracked.txt")).To(Equal(newContent))
+			Expect(repository.git("diff", "--cached", "--name-only")).To(BeEmpty())
+			if staged {
+				Expect(repository.read("tracked.txt")).To(Equal(newContent + "unstaged-marker-must-stay-out\n"))
+				Expect(repository.status()).To(ContainSubstring("?? unrelated.txt"))
+			} else {
+				Expect(repository.status()).To(BeEmpty())
+			}
+		},
+		Entry("existing partial staging", true),
+		Entry("automatic staging", false),
+	)
 })

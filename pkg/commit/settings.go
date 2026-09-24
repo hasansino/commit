@@ -35,8 +35,8 @@ func (o *Settings) Validate() error {
 	if o.Tag != "" && o.Tag != "major" && o.Tag != "minor" && o.Tag != "patch" {
 		return fmt.Errorf("invalid tag increment type: %s (must be major, minor, or patch)", o.Tag)
 	}
-	if o.MaxDiffSizeBytes < 0 {
-		return fmt.Errorf("max diff size bytes cannot be negative")
+	if o.MaxDiffSizeBytes <= 0 {
+		return fmt.Errorf("max diff size bytes must be greater than zero")
 	}
 	if !isValidJiraTaskPosition(o.JiraTaskPosition) {
 		return fmt.Errorf(

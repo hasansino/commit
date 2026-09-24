@@ -1,54 +1,243 @@
 ---
 
 name: release
+run-name: 'release ${{ inputs.version }}'
+
+# Require successful Unified CI for the selected master commit, then build and publish signed CLI artifacts.
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "v-prefixed SemVer without +metadata (for example, v1.2.3-build.7)"
+        required: true
+        type: string
 
-permissions:
-  contents: write
-  id-token: write
+permissions: {}
+
+concurrency:
+  # Stable releases share one Homebrew cask, so publication must be serialized.
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  unit-tests:
-    uses: ./.github/workflows/120-unit-tests.yaml
-    with:
-      runs_on: ubuntu-latest
-      continue_on_error: false
-
-  e2e-tests:
-    uses: ./.github/workflows/125-e2e-tests.yaml
-    with:
-      runs_on: ubuntu-latest
-      continue_on_error: false
-
-  goreleaser:
-    name: goreleaser
+  validate-release:
+    name: validate-release
     runs-on: ubuntu-latest
-    needs:
-      - unit-tests
-      - e2e-tests
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      ci_url: ${{ steps.validate.outputs.ci_url }}
+      is_prerelease: ${{ steps.validate.outputs.is_prerelease }}
+      release_version: ${{ steps.validate.outputs.release_version }}
+      source_sha: ${{ steps.validate.outputs.source_sha }}
     steps:
-      - name: 'Checkout'
-        uses: actions/checkout@v5
+      - name: 'Validate release request'
+        id: validate
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const version = process.env.RELEASE_VERSION;
+            const sourceSha = context.sha;
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            const expectedWorkflowRef =
+              `${repository}/.github/workflows/300-release.yaml@refs/heads/master`;
+            const semver =
+              /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?$/;
+
+            if (!semver.test(version) || version.length > 128) {
+              throw new Error(`Version must be v-prefixed SemVer without build metadata: ${version}`);
+            }
+            if (context.ref !== 'refs/heads/master') {
+              throw new Error(`Release must be dispatched from master, not ${context.ref}`);
+            }
+            if (process.env.WORKFLOW_REF !== expectedWorkflowRef ||
+                process.env.WORKFLOW_SHA !== sourceSha) {
+              throw new Error('Release workflow is not bound to the selected master commit');
+            }
+
+            async function validateMasterHead() {
+              const branch = await github.rest.repos.getBranch({
+                ...context.repo,
+                branch: 'master',
+              });
+              if (branch.data.commit.sha !== sourceSha) {
+                throw new Error('Master advanced after this release was dispatched; run it again');
+              }
+            }
+            await validateMasterHead();
+
+            try {
+              await github.rest.git.getRef({
+                ...context.repo,
+                ref: `tags/${version}`,
+              });
+              throw new Error(`Git tag already exists: ${version}`);
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
+            try {
+              await github.rest.repos.getReleaseByTag({
+                ...context.repo,
+                tag: version,
+              });
+              throw new Error(`GitHub release already exists: ${version}`);
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
+            // Dispatch may arrive before Unified CI starts or completes.
+            const maxAttempts = 100;
+            const pollIntervalMs = 15_000;
+            let ciRun;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              const runs = await github.paginate(
+                github.rest.actions.listWorkflowRuns,
+                {
+                  ...context.repo,
+                  workflow_id: '100-unified-workflow.yaml',
+                  branch: 'master',
+                  event: 'push',
+                  head_sha: sourceSha,
+                  status: 'completed',
+                  per_page: 100,
+                },
+              );
+              ciRun = runs.find((run) =>
+                run.event === 'push' &&
+                run.head_branch === 'master' &&
+                run.head_sha === sourceSha &&
+                run.head_repository?.full_name === repository &&
+                run.status === 'completed' &&
+                run.conclusion === 'success'
+              );
+              if (ciRun) {
+                break;
+              }
+              if (attempt < maxAttempts) {
+                core.info(`Waiting for successful Unified CI for ${sourceSha} (${attempt}/${maxAttempts}); ` +
+                  `retrying in ${pollIntervalMs / 1000} seconds`);
+                await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+              }
+            }
+            if (!ciRun) {
+              throw new Error(`No successful Unified CI run found for ${sourceSha} after ${maxAttempts} checks`);
+            }
+            await validateMasterHead();
+
+            core.setOutput('ci_url', ciRun.html_url);
+            core.setOutput('is_prerelease', version.includes('-'));
+            core.setOutput('release_version', version);
+            core.setOutput('source_sha', sourceSha);
+            await core.summary
+              .addHeading(`Release ${version}`)
+              .addRaw(`Source: \`${sourceSha}\`\n\n`)
+              .addLink('Successful Unified CI', ciRun.html_url)
+              .write();
+
+  publish-release:
+    name: publish-release
+    environment: release
+    needs:
+      - validate-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    steps:
+      - name: 'Checkout validated release commit'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.source_sha }}
           fetch-depth: 0
+          persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
-      - name: 'Install Cosign'
-        uses: sigstore/cosign-installer@v3
-      - name: 'Install Syft'
-        uses: anchore/sbom-action/download-syft@v0
-      - name: 'Run GoReleaser'
-        uses: goreleaser/goreleaser-action@v6
+      - name: 'Install pinned release tools'
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          version: '~> v2'
-          args: release --clean --config .goreleaser.yaml
+          version: '2026.9.1'
+          install_args: --locked task goreleaser syft cosign
+      - name: 'Validate GoReleaser configuration'
+        run: task release:check
+      - name: 'Validate Homebrew token and tap'
+        if: needs.validate-release.outputs.is_prerelease == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo '::error::HOMEBREW_TAP_GITHUB_TOKEN must grant Contents write access to hasansino/homebrew-commit.'
+            exit 1
+          fi
+          gh api repos/hasansino/homebrew-commit --jq '
+            if .private or .archived then error("The Homebrew tap must be public and active")
+            elif .permissions.push != true then error("The token owner must have write access to the Homebrew tap")
+            else .full_name end
+          '
+      - name: 'Create and push validated release tag'
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.release_version }}
+          SOURCE_SHA: ${{ needs.validate-release.outputs.source_sha }}
+          RELEASE_TAG_SSH_KEY: ${{ secrets.RELEASE_TAG_SSH_KEY }}
+        run: |
+          if [ -z "$RELEASE_TAG_SSH_KEY" ]; then
+            echo '::error::RELEASE_TAG_SSH_KEY must be configured in the release environment.'
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          umask 077
+          key_dir=$(mktemp -d "$RUNNER_TEMP/release-tag.XXXXXX")
+          trap 'rm -rf "$key_dir"' EXIT
+          printf '%s\n' "$RELEASE_TAG_SSH_KEY" > "$key_dir/key"
+          unset RELEASE_TAG_SSH_KEY
+          # GitHub's published host key; do not trust a key obtained through ssh-keyscan.
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' \
+            > "$key_dir/known_hosts"
+          git tag "$RELEASE_VERSION" "$SOURCE_SHA"
+          # Only deploy keys bypass tag creation. No actor bypasses tag updates or deletion.
+          export GIT_SSH_COMMAND="ssh -F /dev/null -i \"$key_dir/key\" -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"$key_dir/known_hosts\""
+          git push --no-follow-tags "git@github.com:$GITHUB_REPOSITORY.git" \
+            "refs/tags/$RELEASE_VERSION:refs/tags/$RELEASE_VERSION"
+      - name: 'Build, sign, and publish release'
+        run: task release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          COSIGN_EXPERIMENTAL: 1
+          HOMEBREW_GITHUB_TOKEN: ${{ needs.validate-release.outputs.is_prerelease == 'false' && secrets.HOMEBREW_TAP_GITHUB_TOKEN
+            || '' }}
+      - name: 'Summarize release'
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.release_version }}
+          SOURCE_SHA: ${{ needs.validate-release.outputs.source_sha }}
+          CI_URL: ${{ needs.validate-release.outputs.ci_url }}
+          IS_PRERELEASE: ${{ needs.validate-release.outputs.is_prerelease }}
+        run: |-
+          {
+            echo "## Published $RELEASE_VERSION"
+            echo "Source commit: $SOURCE_SHA"
+            echo "[Successful Unified CI]($CI_URL)"
+            echo "[GitHub release]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_VERSION)"
+            if [ "$IS_PRERELEASE" = 'false' ]; then
+              echo '[Homebrew tap](https://github.com/hasansino/homebrew-commit)'
+              echo 'Install with: brew install --cask hasansino/commit/commit'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

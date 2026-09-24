@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -71,6 +72,10 @@ func NewLocal(logger *slog.Logger) *Local {
 	}
 
 	contextSize, contextErr := positiveIntEnv("LOCAL_CONTEXT_SIZE", defaultContextSize)
+	if contextSize < 0 || contextSize > math.MaxUint32 {
+		contextErr = fmt.Errorf("LOCAL_CONTEXT_SIZE must fit in an unsigned 32-bit integer")
+		contextSize = 0
+	}
 	maxTokens, maxTokensErr := positiveIntEnv("LOCAL_MAX_TOKENS", defaultMaxTokens)
 
 	provider := &Local{

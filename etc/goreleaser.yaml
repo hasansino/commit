@@ -4,9 +4,11 @@ version: 2
 
 project_name: commit
 
+dist: .build/dist
+
 before:
   hooks:
-    - make setup
+    - go mod download
 
 builds:
   - id: commit
@@ -44,6 +46,28 @@ archives:
     files:
       - LICENSE
       - README.md
+
+homebrew_casks:
+  - name: commit
+    ids:
+      - commit
+    binaries:
+      - commit
+    homepage: https://github.com/hasansino/commit
+    description: Commit helper tool
+    skip_upload: auto
+    repository:
+      owner: hasansino
+      name: homebrew-commit
+      token: '{{ .Env.HOMEBREW_GITHUB_TOKEN }}'
+    hooks:
+      post:
+        # Release checksums are signed with Sigstore; macOS binaries are not Apple-notarized.
+        # Limit quarantine removal to the installed executable.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/commit"]
+          end
 
 nfpms:
   - id: commit-packages
@@ -87,11 +111,12 @@ checksum:
   algorithm: sha256
 
 snapshot:
-  version_template: "{{ .Tag }}-next"
+  version_template: "{{ .Version }}-next"
 
 changelog:
   sort: asc
-  use: github
+  # Generate notes from the validated release commit's Git history.
+  use: git
   filters:
     exclude:
       - '^docs:'
@@ -108,8 +133,9 @@ release:
   github:
     owner: hasansino
     name: commit
+  target_commitish: "{{ .Commit }}"
   prerelease: auto
-  make_latest: true
+  make_latest: '{{ if .Prerelease }}false{{ else }}true{{ end }}'
   name_template: "{{.ProjectName}} v{{.Version}}"
 
 # generate SBOMs for archives
@@ -119,34 +145,11 @@ sboms:
 # sign checksums.txt
 signs:
   - cmd: cosign
-    certificate: ""
+    signature: "${artifact}.sigstore.json"
     args:
       - "sign-blob"
-      - "--output-signature=${signature}"
-      - "--output-certificate=${certificate}"
+      - "--bundle=${signature}"
       - "${artifact}"
       - "--yes"
     artifacts: checksum
     output: true
-
-brews:
-  - name: commit
-    ids:
-      - commit
-    license: "MIT"
-    directory: .
-    repository:
-      owner: hasansino
-      name: homebrew-commit
-      branch: master
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    commit_author:
-      name: goreleaserbot
-      email: bot@goreleaser.com
-    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
-    homepage: "https://github.com/hasansino/commit"
-    description: "Commit helper tool"
-    dependencies:
-      - name: git
-    test: |-
-      system "#{bin}/commit", "--help"

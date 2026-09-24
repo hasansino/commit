@@ -261,6 +261,25 @@ func TestLocalRejectsInvalidGenerationSettings(t *testing.T) {
 	}
 }
 
+func TestLocalContextSizeBounds(t *testing.T) {
+	t.Setenv("LOCAL_MAX_TOKENS", "64")
+	t.Run("maximum representable size", func(t *testing.T) {
+		t.Setenv("LOCAL_CONTEXT_SIZE", "4294967295")
+		provider := NewLocal(nil)
+		if provider.configErr != nil || provider.contextSize != 4294967295 {
+			t.Fatalf("context size = %d, error = %v", provider.contextSize, provider.configErr)
+		}
+	})
+	t.Run("overflow rejected before inference", func(t *testing.T) {
+		t.Setenv("LOCAL_CONTEXT_SIZE", "4294967296")
+		provider := NewLocal(nil)
+		_, err := provider.Ask(context.Background(), "prompt")
+		if err == nil || !strings.Contains(err.Error(), "LOCAL_CONTEXT_SIZE") {
+			t.Fatalf("Ask() error = %v, want context size validation error", err)
+		}
+	})
+}
+
 func TestLocalRequiresLlamaCLI(t *testing.T) {
 	provider := NewLocal(slog.New(slog.DiscardHandler))
 	provider.lookPath = func(string) (string, error) {

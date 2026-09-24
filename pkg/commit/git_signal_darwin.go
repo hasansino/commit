@@ -34,7 +34,9 @@ func darwinPthreadSigmask(how int, set, previous *uint32) error {
 	_, _, errno := unix.RawSyscall(
 		unix.SYS___PTHREAD_SIGMASK,
 		uintptr(how),
+		// #nosec G103 -- RawSyscall consumes these uint32 signal masks synchronously on the pinned OS thread.
 		uintptr(unsafe.Pointer(set)),
+		// #nosec G103 -- previous is an optional uint32 output pointer valid for the duration of this syscall.
 		uintptr(unsafe.Pointer(previous)),
 	)
 	if errno != 0 {
