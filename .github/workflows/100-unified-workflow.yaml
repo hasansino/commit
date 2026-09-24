@@ -74,9 +74,7 @@ jobs:
   security:
     uses: ./.github/workflows/130-security.yaml
     permissions:
-      actions: read
       contents: read
-      security-events: write
     needs:
       - unit-tests
     with:
