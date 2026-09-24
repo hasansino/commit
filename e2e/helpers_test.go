@@ -391,7 +391,6 @@ type apiReply struct {
 	Message string
 	Status  int
 	Body    string
-	Delay   time.Duration
 	Release <-chan struct{}
 }
 
@@ -481,14 +480,6 @@ func (f *fakeAI) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
-	if reply.Delay > 0 {
-		select {
-		case <-time.After(reply.Delay):
-		case <-request.Context().Done():
-			return
-		}
-	}
-
 	status := reply.Status
 	if status == 0 {
 		status = http.StatusOK

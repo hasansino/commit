@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/creack/pty"
@@ -31,17 +32,22 @@ func runInteractiveCLI(
 	arguments ...string,
 ) interactiveResult {
 	GinkgoHelper()
-	return runTerminalCLI(ctx, workingDirectory, options, func(terminal *os.File, output *gbytes.Buffer) {
-		Eventually(output).WithContext(ctx).WithTimeout(commandTimeout).Should(gbytes.Say("Select Commit Message"))
-		interact(terminal, output)
-	}, arguments...)
+	return runTerminalCLI(
+		ctx,
+		workingDirectory,
+		options,
+		func(terminal *os.File, output *gbytes.Buffer, _ <-chan struct{}) {
+			Eventually(output).WithContext(ctx).WithTimeout(commandTimeout).Should(gbytes.Say("Select Commit Message"))
+			interact(terminal, output)
+		},
+		arguments...)
 }
 
 func runTerminalCLI(
 	ctx context.Context,
 	workingDirectory string,
 	options runOptions,
-	interact func(*os.File, *gbytes.Buffer),
+	interact func(*os.File, *gbytes.Buffer, <-chan struct{}),
 	arguments ...string,
 ) interactiveResult {
 	GinkgoHelper()
@@ -55,13 +61,15 @@ func runTerminalCLI(
 	output := gbytes.NewBuffer()
 	copyDone := make(chan struct{})
 	go func() {
-		_, _ = io.Copy(output, terminal)
+		_, _ = io.Copy(io.MultiWriter(output, GinkgoWriter), terminal)
 		close(copyDone)
 	}()
 	waitDone := make(chan error, 1)
+	exited := make(chan struct{})
 	go func() {
 		waitDone <- command.Wait()
 		close(waitDone)
+		close(exited)
 	}()
 
 	DeferCleanup(func() {
@@ -73,7 +81,7 @@ func runTerminalCLI(
 		waitForCleanup("PTY output copy", copyDone)
 	})
 
-	interact(terminal, output)
+	interact(terminal, output, exited)
 
 	var waitError error
 	Eventually(waitDone).WithContext(ctx).WithTimeout(commandTimeout).Should(Receive(&waitError))
@@ -114,24 +122,37 @@ var _ = Describe("Interactive terminal workflow", func() {
 				repository.git("add", ".gitattributes")
 				repository.git("commit", "-m", "test: configure terminal filter")
 				repository.write("prompt.txt", "filter payload\n")
+				// Force Git to recheck the file instead of trusting cached stat data.
+				// A clean filter may run repeatedly while staging and committing.
+				future := time.Now().Add(time.Hour)
+				Expect(os.Chtimes(filepath.Join(repository.Path, "prompt.txt"), future, future)).To(Succeed())
 			} else {
 				repository.append("tracked.txt", "terminal hook change\n")
 				writeHook(repository, "pre-commit", script)
 			}
+			responses := 0
 			result := runTerminalCLI(ctx, repository.Path, repositoryOptions(repository),
-				func(terminal *os.File, output *gbytes.Buffer) {
-					Eventually(
-						output,
-					).WithContext(ctx).
-						WithTimeout(commandTimeout).
-						Should(gbytes.Say("Git input ready"))
-					_, err := terminal.Write([]byte("allow\n"))
-					Expect(err).NotTo(HaveOccurred())
+				func(terminal *os.File, output *gbytes.Buffer, exited <-chan struct{}) {
+					Eventually(func() bool {
+						for responses < strings.Count(string(output.Contents()), "Git input ready") {
+							_, err := terminal.Write([]byte("allow\n"))
+							Expect(err).NotTo(HaveOccurred())
+							responses++
+						}
+						select {
+						case <-exited:
+							return true
+						default:
+							return false
+						}
+					}).WithContext(ctx).WithTimeout(commandTimeout).Should(BeTrue())
 				}, "--auto", "--providers=openai")
 			Expect(result.ExitCode).To(Equal(0), result.Output)
 			if filter {
+				Expect(responses).To(BeNumerically(">=", 2), "the filter must exercise repeated terminal input")
 				Expect(repository.git("show", "HEAD:prompt.txt")).To(Equal("filter payload\n"))
 			} else {
+				Expect(responses).To(Equal(1))
 				Expect(repository.git("show", "HEAD:tracked.txt")).To(ContainSubstring("terminal hook change"))
 			}
 			expectNoStagingArtifacts(repository)
@@ -146,7 +167,7 @@ var _ = Describe("Interactive terminal workflow", func() {
 		beforeIndex := repository.indexBytes()
 		writeHook(repository, "pre-commit", "#!/bin/sh\nprintf '\\nGit stop ready\\n' >/dev/tty\nsleep 30\n")
 		result := runTerminalCLI(ctx, repository.Path, repositoryOptions(repository),
-			func(terminal *os.File, output *gbytes.Buffer) {
+			func(terminal *os.File, output *gbytes.Buffer, _ <-chan struct{}) {
 				Eventually(output).WithContext(ctx).WithTimeout(commandTimeout).Should(gbytes.Say("Git stop ready"))
 				_, err := terminal.Write([]byte{0x1a})
 				Expect(err).NotTo(HaveOccurred())

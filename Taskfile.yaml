@@ -148,7 +148,7 @@ tasks:
     cmds:
       - >-
         go run github.com/onsi/ginkgo/v2/ginkgo --race --procs=4 --randomize-all --fail-on-pending --fail-on-empty --trace
-        --timeout=5m ./e2e
+        --timeout={{.E2E_TIMEOUT | default "5m" | shellQuote}} ./e2e
 
   test:release:
     desc: "Verify release artifacts and test the native packaged CLI"
@@ -156,6 +156,9 @@ tasks:
       COMMIT_RELEASE_DIST: '{{.COMMIT_RELEASE_DIST | default ".build/dist"}}'
     cmds:
       - task: test:e2e
+        vars:
+          # Allow the full suite to finish on slower native macOS Intel runners.
+          E2E_TIMEOUT: '{{.E2E_TIMEOUT | default "10m"}}'
 
   # ╭────────────────────----------------──────────╮
   # │               General workflow               │

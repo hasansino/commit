@@ -181,22 +181,28 @@ var _ = Describe("AI provider boundaries", func() {
 		repository.append("tracked.txt", "slow provider\n")
 		beforeIndex := repository.indexBytes()
 		api := newFakeAI()
-		api.setReply(providerOpenAI, apiReply{Message: "fix: too late", Delay: 10 * time.Second})
+		release := make(chan struct{})
+		DeferCleanup(func() { close(release) })
+		api.setReply(providerOpenAI, apiReply{Message: "fix: too late", Release: release})
 		options := openAIOptions(api)
 		options.GlobalConfig = repository.GlobalConfig
 
-		started := time.Now()
-		result := runCLI(
+		session := startCLI(
 			ctx,
 			repository.Path,
 			options,
 			"--auto",
 			"--providers=openai",
-			"--timeout=100ms",
+			"--timeout=2s",
 		)
+		Eventually(func() int { return len(api.requestsFor(providerOpenAI)) }).
+			WithContext(ctx).WithTimeout(commandTimeout).Should(Equal(1))
+		// Bound the timeout after the request arrives, independently of Git setup.
+		// The fixture stays blocked until cancellation or test cleanup.
+		result := resultFromSession(ctx, session, 4*time.Second)
 
 		Expect(result.ExitCode).To(Equal(1))
-		Expect(time.Since(started)).To(BeNumerically("<", 8*time.Second))
+		Expect(result.Output()).To(ContainSubstring("context deadline exceeded"))
 		Expect(result.Output()).To(ContainSubstring("no valid suggestions available for auto-commit"))
 		Expect(api.requestsFor(providerOpenAI)).To(HaveLen(1))
 		Expect(repository.indexBytes()).To(Equal(beforeIndex))
