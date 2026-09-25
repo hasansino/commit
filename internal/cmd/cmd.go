@@ -150,7 +150,7 @@ func initLogging(level string) {
 		TimeFormat: time.TimeOnly,
 	}
 
-	logger := slog.New(tint.NewHandler(os.Stdout, loggerOpts))
+	logger := slog.New(tint.NewTextHandler(os.Stdout, loggerOpts))
 
 	// Any call to log.* will be redirected to slog.Error.
 	// Because of that, we need to agree to use `log` package only for errors.
