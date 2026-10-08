@@ -5,17 +5,16 @@
 version: "1.0"
 
 project:
-  name: go42
+  name: commit
   language: go
-  description: 'Golang project operation blueprint.'
+  description: 'AI-assisted Git commit helper.'
   tags:
-    - go42
     - golang
-    - blueprint
-    - service
+    - git
+    - cli
   metadata:
-    repository: github.com/go42-dev/go42
-    documentation-entrypoint: docs/README.md
+    repository: github.com/hasansino/commit
+    documentation-entrypoint: README.md
 
 # Environment variable names whose values should appear in the shared context.
 env: []
