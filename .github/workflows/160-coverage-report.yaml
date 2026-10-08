@@ -133,7 +133,7 @@ jobs:
           coverage-file-name: coverage.out
           root-package: github.com/hasansino/commit
           trim: github.com/hasansino/commit
-          exclude: '(^|/)(mocks|tests|e2e)/'
+          exclude: '(^|/)(mocks|tests)/'
           github-baseline-workflow-ref: 100-unified-workflow.yaml
           skip-comment: >-
             ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}

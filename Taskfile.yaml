@@ -132,7 +132,7 @@ tasks:
         fi
         mkdir -p .build
         unit_packages=$(go list ./...)
-        unit_exclude_pattern=$(printf '%s\n' mocks tests e2e | paste -sd '|' -)
+        unit_exclude_pattern=$(printf '%s\n' mocks tests | paste -sd '|' -)
         unit_packages=$(printf '%s\n' "$unit_packages" | grep -vE "/($unit_exclude_pattern)(/|$)")
         # go list returns separate package names; preserve word splitting here.
         # shellcheck disable=SC2086
@@ -148,7 +148,7 @@ tasks:
     cmds:
       - >-
         go run github.com/onsi/ginkgo/v2/ginkgo --race --procs=4 --randomize-all --fail-on-pending --fail-on-empty --trace
-        --timeout={{.E2E_TIMEOUT | default "5m" | shellQuote}} ./e2e
+        --timeout={{.E2E_TIMEOUT | default "5m" | shellQuote}} ./tests/e2e
 
   test:release:
     desc: "Verify release artifacts and test the native packaged CLI"

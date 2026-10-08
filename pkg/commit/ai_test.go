@@ -547,7 +547,7 @@ func TestAIService_GenerateCommitMessages_NoProviders(t *testing.T) {
 	)
 
 	if err == nil {
-		t.Error("GenerateCommitMessages() expected error for no providers but got none")
+		t.Fatal("GenerateCommitMessages() expected error for no providers but got none")
 	}
 
 	expectedError := "no ai providers available"
@@ -563,6 +563,7 @@ func TestAIService_GenerateCommitMessages_RejectsUnusableMessages(t *testing.T) 
 	}{
 		{name: "no messages", messages: nil},
 		{name: "blank after cleanup", messages: []string{" \n\t "}},
+		{name: "empty fenced content", messages: []string{"```gitcommit\n \n```"}},
 	}
 
 	for _, tt := range tests {
@@ -584,11 +585,11 @@ func TestAIService_GenerateCommitMessages_RejectsUnusableMessages(t *testing.T) 
 			messages, err := service.GenerateCommitMessages(
 				context.Background(), "diff", "main", []string{"file.go"}, nil, "", false,
 			)
-			if err != nil {
-				t.Fatalf("GenerateCommitMessages() error = %v", err)
+			if err == nil || !strings.Contains(err.Error(), "no valid commit messages generated") {
+				t.Fatalf("GenerateCommitMessages() error = %v, want no valid messages error", err)
 			}
-			if len(messages) != 0 {
-				t.Fatalf("GenerateCommitMessages() = %#v, want no messages", messages)
+			if messages != nil {
+				t.Fatalf("GenerateCommitMessages() = %#v, want nil messages", messages)
 			}
 		})
 	}
@@ -633,13 +634,12 @@ func TestAIService_GenerateCommitMessages_ContextCancellation(t *testing.T) {
 		ctx, diff, branch, files, providers, "", false,
 	)
 
-	if err != nil {
-		t.Errorf("GenerateCommitMessages() unexpected error = %v", err)
+	if err == nil || err.Error() != "no valid commit messages generated" {
+		t.Fatalf("GenerateCommitMessages() error = %v, want no valid messages error", err)
 	}
 
-	// Should return empty messages since context was cancelled
-	if len(messages) != 0 {
-		t.Errorf("GenerateCommitMessages() with cancelled context should return empty messages, got %d", len(messages))
+	if messages != nil {
+		t.Errorf("GenerateCommitMessages() with cancelled context = %#v, want nil messages", messages)
 	}
 }
 
@@ -647,36 +647,83 @@ func TestAIService_GenerateCommitMessages_ProviderError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockProvider := mocks.NewMockproviderAccessor(ctrl)
-	mockProvider.EXPECT().Name().Return("errorprovider").AnyTimes()
-	mockProvider.EXPECT().IsLocal().Return(false)
-	mockProvider.EXPECT().Ask(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("provider error"))
-
+	providerErr := errors.New("provider error")
 	service := &aiService{
-		logger:  slog.New(slog.DiscardHandler),
-		timeout: 30 * time.Second,
-		providers: map[string]providerAccessor{
-			"errorprovider": mockProvider,
-		},
+		logger:    slog.New(slog.DiscardHandler),
+		timeout:   30 * time.Second,
+		providers: make(map[string]providerAccessor),
+	}
+	providerErrors := map[string]error{
+		"errorprovider":   providerErr,
+		"timeoutprovider": context.DeadlineExceeded,
+	}
+	for name, err := range providerErrors {
+		provider := mocks.NewMockproviderAccessor(ctrl)
+		provider.EXPECT().Name().Return(name).AnyTimes()
+		provider.EXPECT().IsLocal().Return(false)
+		provider.EXPECT().Ask(gomock.Any(), gomock.Any()).Return(nil, err)
+		service.providers[name] = provider
 	}
 
 	ctx := context.Background()
 	diff := "diff --git a/test.go b/test.go\n+func test() {}"
 	branch := "master"
 	files := []string{"test.go"}
-	providers := []string{"errorprovider"}
+	providers := []string{"errorprovider", "timeoutprovider"}
 
 	messages, err := service.GenerateCommitMessages(
 		ctx, diff, branch, files, providers, "", false,
 	)
 
-	if err != nil {
-		t.Errorf("GenerateCommitMessages() unexpected error = %v", err)
+	if err == nil || err.Error() != "no valid commit messages generated" {
+		t.Fatalf("GenerateCommitMessages() error = %v, want no valid messages error", err)
 	}
+	if messages != nil {
+		t.Errorf("GenerateCommitMessages() with failing providers = %#v, want nil messages", messages)
+	}
+}
 
-	// Should return empty messages since provider failed
-	if len(messages) != 0 {
-		t.Errorf("GenerateCommitMessages() with failing provider should return empty messages, got %d", len(messages))
+func TestAIService_GenerateCommitMessages_PartialSuccess(t *testing.T) {
+	tests := []struct {
+		name     string
+		messages []string
+		err      error
+	}{
+		{name: "provider error", err: errors.New("provider error")},
+		{name: "no messages"},
+		{name: "blank after cleanup", messages: []string{" \n\t "}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			valid := mocks.NewMockproviderAccessor(ctrl)
+			valid.EXPECT().Name().Return("valid").AnyTimes()
+			valid.EXPECT().IsLocal().Return(false)
+			valid.EXPECT().Ask(gomock.Any(), gomock.Any()).Return([]string{"  valid message  "}, nil)
+
+			invalid := mocks.NewMockproviderAccessor(ctrl)
+			invalid.EXPECT().Name().Return("invalid").AnyTimes()
+			invalid.EXPECT().IsLocal().Return(false)
+			invalid.EXPECT().Ask(gomock.Any(), gomock.Any()).Return(tt.messages, tt.err)
+
+			service := &aiService{
+				logger:  slog.New(slog.DiscardHandler),
+				timeout: time.Second,
+				providers: map[string]providerAccessor{
+					"valid":   valid,
+					"invalid": invalid,
+				},
+			}
+			messages, err := service.GenerateCommitMessages(
+				context.Background(), "diff", "main", []string{"file.go"}, nil, "", false,
+			)
+			if err != nil {
+				t.Fatalf("GenerateCommitMessages() error = %v, want partial success", err)
+			}
+			if len(messages) != 1 || messages["valid"] != "valid message" {
+				t.Fatalf("GenerateCommitMessages() = %#v, want only the cleaned valid message", messages)
+			}
+		})
 	}
 }
 

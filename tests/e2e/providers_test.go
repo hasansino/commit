@@ -156,7 +156,9 @@ var _ = Describe("AI provider boundaries", func() {
 			result := runCLI(ctx, repository.Path, options, "--auto", "--providers=openai")
 
 			Expect(result.ExitCode).To(Equal(1))
-			Expect(result.Output()).To(ContainSubstring("no valid suggestions available for auto-commit"))
+			Expect(
+				result.Output(),
+			).To(ContainSubstring("failed to generate suggestions: no valid commit messages generated"))
 			Expect(api.requestsFor(providerOpenAI)).NotTo(BeEmpty())
 			Expect(repository.indexBytes()).To(Equal(beforeIndex))
 			Expect(repository.head()).To(Equal(repository.InitialHead))
@@ -175,6 +177,35 @@ var _ = Describe("AI provider boundaries", func() {
   "choices":[{"index":0,"message":{"role":"assistant","content":"ignored"},"finish_reason":"length"}]
 }`}),
 	)
+
+	It("fails before opening the UI when all providers fail", func(ctx SpecContext) {
+		repository := newRepository()
+		repository.append("tracked.txt", "all providers should fail\n")
+		beforeIndex := repository.indexBytes()
+		api := newFakeAI()
+		api.setReply(providerOpenAI, apiReply{
+			Status: http.StatusBadRequest,
+			Body:   `{"error":{"message":"synthetic rejection","type":"invalid_request_error"}}`,
+		})
+		api.setReply(providerClaude, apiReply{Message: " \n\t "})
+		options := runOptions{
+			API:          api,
+			Providers:    []string{providerOpenAI, providerClaude},
+			GlobalConfig: repository.GlobalConfig,
+		}
+
+		result := runCLI(ctx, repository.Path, options, "--providers=openai,claude")
+
+		Expect(result.ExitCode).To(Equal(1))
+		Expect(
+			result.Output(),
+		).To(ContainSubstring("failed to generate suggestions: no valid commit messages generated"))
+		for _, provider := range options.Providers {
+			Expect(api.requestsFor(provider)).NotTo(BeEmpty(), "provider %s", provider)
+		}
+		Expect(repository.indexBytes()).To(Equal(beforeIndex))
+		Expect(repository.head()).To(Equal(repository.InitialHead))
+	})
 
 	It("enforces the configured provider timeout and restores staging", func(ctx SpecContext) {
 		repository := newRepository()
@@ -203,7 +234,9 @@ var _ = Describe("AI provider boundaries", func() {
 
 		Expect(result.ExitCode).To(Equal(1))
 		Expect(result.Output()).To(ContainSubstring("context deadline exceeded"))
-		Expect(result.Output()).To(ContainSubstring("no valid suggestions available for auto-commit"))
+		Expect(
+			result.Output(),
+		).To(ContainSubstring("failed to generate suggestions: no valid commit messages generated"))
 		Expect(api.requestsFor(providerOpenAI)).To(HaveLen(1))
 		Expect(repository.indexBytes()).To(Equal(beforeIndex))
 		Expect(repository.head()).To(Equal(repository.InitialHead))

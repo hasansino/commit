@@ -188,6 +188,7 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 	if err != nil {
 		return err
 	}
+
 	if commitMessage == "" {
 		return nil
 	}

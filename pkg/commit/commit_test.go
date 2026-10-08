@@ -303,7 +303,7 @@ func (s *simpleTestAdapter) GenerateCommitMessages(
 	if s.commitMsg != "" {
 		return map[string]string{"test": s.commitMsg}, nil
 	}
-	return map[string]string{}, nil
+	return nil, errors.New("no valid commit messages generated")
 }
 
 // Integration test helpers for testing with actual modules
@@ -535,10 +535,9 @@ func TestService_Execute(t *testing.T) {
 			errContains: "failed to generate suggestions",
 		},
 		{
-			name: "auto mode with no messages",
+			name: "no messages fails before interactive selection",
 			settings: &Settings{
 				Timeout: 30 * time.Second,
-				Auto:    true,
 			},
 			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: ""},
 			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
@@ -550,7 +549,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
 			},
 			wantErr:     true,
-			errContains: "no valid suggestions available for auto-commit",
+			errContains: "failed to generate suggestions: no valid commit messages generated",
 		},
 		{
 			name: "auto mode success with dry run",

@@ -9,7 +9,7 @@
 .build/
 .tools/
 .task/
-e2e/e2e.test
+tests/e2e/e2e.test
 
 # go42x generated files
 .go42x/go42x.local.yaml
@@ -17,10 +17,8 @@ e2e/e2e.test
 .go42x/backups/
 .mcp.json
 .claude/
-CLAUDE.md
 .codex/
-AGENTS.md
-.gemini/
-GEMINI.md
 .crush/
 .crush.json
+.agents/plugins/project-tools/
+AGENTS.md

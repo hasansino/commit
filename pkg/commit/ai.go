@@ -82,6 +82,9 @@ func (s *aiService) FilterProviders(requested []string) map[string]providerAcces
 	return filtered
 }
 
+// GenerateCommitMessages returns cleaned, non-empty suggestions keyed by provider.
+// Partial provider failures are tolerated when at least one suggestion is valid.
+// If no valid suggestions remain, it returns nil and an error wrapping provider failures.
 func (s *aiService) GenerateCommitMessages(
 	ctx context.Context,
 	diff, branch string, files []string,
@@ -196,6 +199,10 @@ func (s *aiService) GenerateCommitMessages(
 			"provider", result.Name,
 			"time", result.Time.String(),
 		)
+	}
+
+	if len(results) == 0 {
+		return nil, errors.New("no valid commit messages generated")
 	}
 
 	return results, nil

@@ -44,7 +44,7 @@ type releaseBundle struct {
 // prepareReleaseBinary validates the bundle before any CLI scenario runs.
 // The caller owns cleanup of the extracted binary directory.
 func prepareReleaseBinary(dist string) (path, version, dir string, err error) {
-	root, err := filepath.Abs("..")
+	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		return "", "", "", err
 	}
