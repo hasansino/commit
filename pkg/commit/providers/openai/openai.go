@@ -21,17 +21,19 @@ const (
 )
 
 type OpenAI struct {
-	apiKey  string
-	model   string
-	client  *openai.Client
-	timeout time.Duration
+	apiKey          string
+	model           string
+	client          *openai.Client
+	timeout         time.Duration
+	unsafeAllowHTTP bool
 }
 
 func NewOpenAI() *OpenAI {
 	return &OpenAI{
-		apiKey:  os.Getenv("OPENAI_API_KEY"),
-		model:   os.Getenv("OPENAI_MODEL"),
-		timeout: defaultTimeout,
+		apiKey:          os.Getenv("OPENAI_API_KEY"),
+		model:           os.Getenv("OPENAI_MODEL"),
+		timeout:         defaultTimeout,
+		unsafeAllowHTTP: os.Getenv("OPENAI_UNSAFE_ALLOW_HTTP") == "1",
 	}
 }
 
@@ -58,10 +60,15 @@ func (p *OpenAI) Ask(ctx context.Context, prompt string) ([]string, error) {
 		httpClient := &http.Client{
 			Timeout: p.timeout,
 		}
-		client := openai.NewClient(
+		options := []option.RequestOption{
 			option.WithAPIKey(p.apiKey),
 			option.WithHTTPClient(httpClient),
-		)
+		}
+		if p.unsafeAllowHTTP {
+			// The SDK confines this opt-in to direct loopback connections for local fixtures.
+			options = append(options, option.WithUnsafeAllowHTTP())
+		}
+		client := openai.NewClient(options...)
 		p.client = &client
 	}
 

@@ -154,6 +154,7 @@ func childEnvironment(options runOptions) []string {
 				overrides["OPENAI_API_KEY"] = "e2e-openai-key"
 				overrides["OPENAI_MODEL"] = "e2e-openai-model"
 				overrides["OPENAI_BASE_URL"] = options.API.URL() + "/v1/"
+				overrides["OPENAI_UNSAFE_ALLOW_HTTP"] = "1"
 			case providerClaude:
 				overrides["ANTHROPIC_API_KEY"] = "e2e-claude-key"
 				overrides["ANTHROPIC_MODEL"] = "e2e-claude-model"

@@ -78,6 +78,24 @@ var _ = Describe("AI provider boundaries", func() {
 		}),
 	)
 
+	It("requires an explicit opt-in for authenticated OpenAI requests over HTTP", func(ctx SpecContext) {
+		repository := newRepository()
+		repository.append("tracked.txt", "HTTP needs an explicit opt-in\n")
+		beforeIndex := repository.indexBytes()
+		api := newFakeAI()
+		options := openAIOptions(api)
+		options.GlobalConfig = repository.GlobalConfig
+		options.Environment = map[string]string{"OPENAI_UNSAFE_ALLOW_HTTP": ""}
+
+		result := runCLI(ctx, repository.Path, options, "--auto", "--providers=openai")
+
+		Expect(result.ExitCode).To(Equal(1))
+		Expect(result.Output()).To(ContainSubstring("authenticated requests require HTTPS"))
+		Expect(api.requestsFor(providerOpenAI)).To(BeEmpty())
+		Expect(repository.indexBytes()).To(Equal(beforeIndex))
+		Expect(repository.head()).To(Equal(repository.InitialHead))
+	})
+
 	It("calls every configured provider when no filter is supplied", func(ctx SpecContext) {
 		repository := newRepository()
 		repository.append("tracked.txt", "fan out to all providers\n")
