@@ -13,7 +13,7 @@ import (
 const ProviderName = "gemini"
 
 const (
-	defaultModel     = "gemini-2.5-flash-lite"
+	defaultModel     = "gemini-3.5-flash-lite"
 	defaultMaxTokens = 4096
 	defaultTimeout   = 10 * time.Second
 )

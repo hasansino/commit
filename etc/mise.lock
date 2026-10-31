@@ -101,9 +101,9 @@ backend = "go:github.com/google/yamlfmt/cmd/yamlfmt"
 specifiers = ["0.21.0"]
 
 [[tools."go:github.com/securego/gosec/v2/cmd/gosec"]]
-version = "2.29.1-0.20260904090110-598d6146b91b"
+version = "2.30.0"
 backend = "go:github.com/securego/gosec/v2/cmd/gosec"
-specifiers = ["v2.29.1-0.20260904090110-598d6146b91b"]
+specifiers = ["2.30.0"]
 
 [[tools."go:go.uber.org/mock/mockgen"]]
 version = "0.6.0"

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -81,6 +82,7 @@ func TestModelSuccessfulSelectionIsDone(t *testing.T) {
 func TestModelSuccessfulManualInputIsDone(t *testing.T) {
 	model := newModel(nil, nil)
 	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlU})
 	model, _ = updateModelWithKey(t, model, tea.KeyMsg{
 		Type:  tea.KeyRunes,
 		Runes: []rune("feat: manual"),
@@ -99,6 +101,7 @@ func TestModelSuccessfulManualInputIsDone(t *testing.T) {
 func TestModelManualInputTreatsFriendlyKeyNamesAsText(t *testing.T) {
 	model := newModel(nil, nil)
 	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlU})
 
 	for _, input := range []string{"enter", "backspace", "esc"} {
 		model, _ = updateModelWithKey(t, model, tea.KeyMsg{
@@ -109,6 +112,38 @@ func TestModelManualInputTreatsFriendlyKeyNamesAsText(t *testing.T) {
 
 	if got, want := model.manualInput, "enterbackspaceesc"; got != want {
 		t.Fatalf("manualInput = %q, want %q", got, want)
+	}
+}
+
+func TestModelManualTemplateCanBeEditedAndReset(t *testing.T) {
+	model := newModel(nil, nil)
+	model.width = 120
+	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+	if got := model.manualInput; got != ManualInputTemplate {
+		t.Fatalf("manualInput = %q, want %q", got, ManualInputTemplate)
+	}
+	if view := model.View(); !strings.Contains(view, ManualInputTemplate) {
+		t.Fatal("manual input does not display the template")
+	}
+
+	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyBackspace})
+	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e today")})
+	if got, want := model.manualInput, "feat(scope): describe your change today"; got != want {
+		t.Fatalf("edited manualInput = %q, want %q", got, want)
+	}
+	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyEsc})
+	if model.manualMode || model.IsDone() || model.GetFinalChoice() != "" {
+		t.Fatal("canceling the draft should return to selection without choosing a message")
+	}
+	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+	if got := model.manualInput; got != ManualInputTemplate {
+		t.Fatalf("reopened manualInput = %q, want %q", got, ManualInputTemplate)
+	}
+
+	model, _ = updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlU})
+	model, cmd := updateModelWithKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlD})
+	if model.manualInput != "" || model.IsDone() || cmd != nil {
+		t.Fatal("cleared input must remain empty and cannot be submitted")
 	}
 }
 

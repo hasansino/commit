@@ -19,9 +19,9 @@ const ProviderName = "local"
 const llamaCLIExecutable = "llama-cli"
 
 const (
-	defaultModelFilename = "Qwen3-0.6B-Q8_0.gguf"
-	defaultModelURL      = "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/23749fefcc72300e3a2ad315e1317431b06b590a/" + defaultModelFilename + "?download=true"
-	defaultModelSHA256   = "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
+	defaultModelFilename = "Qwen3.5-0.8B-Q8_0.gguf"
+	defaultModelURL      = "https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/807dfd9a6fadbf703207aac3bfb0b2b3040d077c/" + defaultModelFilename + "?download=true"
+	defaultModelSHA256   = "37ae482d336108d23516fa35e8e0c4126688d81018b87178a18d752a1357814f"
 	defaultContextSize   = 32 * 1024
 	defaultMaxTokens     = 64
 	defaultTimeout       = 10 * time.Second

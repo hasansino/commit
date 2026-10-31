@@ -66,13 +66,14 @@ func IsTagCheckbox(id string) bool {
 
 // UI Text
 const (
-	ListTitle         = "Select Commit Message"
-	ManualOptionTitle = "Write custom message"
-	ManualOptionDesc  = "Enter your own commit message"
-	ManualInputTitle  = "Write Your Commit Message"
-	ManualInputHelp   = "Enter: new line • Ctrl+D: finish • Esc: cancel"
-	FooterHelp        = "Press 1-5 to toggle options"
-	ProviderManual    = "manual"
+	ListTitle           = "Select Commit Message"
+	ManualOptionTitle   = "Write custom message"
+	ManualOptionDesc    = "Enter your own commit message"
+	ManualInputTitle    = "Write Your Commit Message"
+	ManualInputHelp     = "Enter: new line • Ctrl+D: finish • Ctrl+U: clear • Esc: cancel"
+	ManualInputTemplate = "feat(scope): describe your change"
+	FooterHelp          = "Press 1-5 to toggle options"
+	ProviderManual      = "manual"
 )
 
 // Unicode Characters
@@ -119,6 +120,7 @@ const (
 	KeyCancel      = "esc"
 	KeyNewLine     = "enter"
 	KeyFinishInput = "ctrl+d"
+	KeyClearInput  = "ctrl+u"
 	KeyBackspace   = "backspace"
 	KeySpace       = " "
 	KeyInterrupt   = "ctrl+c"

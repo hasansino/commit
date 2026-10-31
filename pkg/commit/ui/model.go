@@ -174,7 +174,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if item, ok := selected.(CommitItem); ok {
 				if item.provider == ProviderManual {
 					m.manualMode = true
-					m.manualInput = ""
+					m.manualInput = ManualInputTemplate
 				} else {
 					m.finalChoice = item.message
 					m.done = true
@@ -258,6 +258,8 @@ func (m Model) updateManualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case KeyNewLine:
 		// Enter for new lines
 		m.manualInput += "\n"
+	case KeyClearInput:
+		m.manualInput = ""
 	case KeyFinishInput:
 		// Ctrl+D to finish multi-line input
 		trimmed := strings.TrimSpace(m.manualInput)

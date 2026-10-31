@@ -245,7 +245,9 @@ var _ = Describe("Interactive terminal workflow", func() {
 					WithContext(ctx).
 					WithTimeout(commandTimeout).
 					Should(gbytes.Say("Write Your Commit Message"))
-				_, err = terminal.Write([]byte("docs: enter a manual message\rwith a body\x04"))
+				Eventually(output).WithContext(ctx).WithTimeout(commandTimeout).
+					Should(gbytes.Say("feat\\(scope\\): describe your change"))
+				_, err = terminal.Write([]byte("\x15docs: enter a manual message\rwith a body\x04"))
 				Expect(err).NotTo(HaveOccurred())
 			},
 			"--providers=openai",

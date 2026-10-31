@@ -53,6 +53,8 @@ var _ = Describe("AI provider boundaries", func() {
 			Expect(requests[0].Header.Get(expected.Header)).To(Equal(expected.HeaderValue))
 			Expect(string(requests[0].Body)).To(ContainSubstring(expected.BodyFragment))
 			Expect(requests[0].Prompt).To(Equal("provider prompt: master | tracked.txt"))
+			Expect(string(requests[0].Body)).NotTo(ContainSubstring(`"reasoning_effort"`))
+			Expect(string(requests[0].Body)).NotTo(ContainSubstring(`"output_config"`))
 			Expect(repository.head()).To(Equal(repository.InitialHead))
 		},
 		Entry("OpenAI", providerExpectation{
@@ -76,6 +78,47 @@ var _ = Describe("AI provider boundaries", func() {
 			HeaderValue:  "e2e-gemini-key",
 			BodyFragment: `"contents"`,
 		}),
+	)
+
+	DescribeTable("uses current defaults when model overrides are unset",
+		func(ctx SpecContext, expected providerExpectation, modelVariable string) {
+			repository := newRepository()
+			repository.append("tracked.txt", "default provider model\n")
+			api := newFakeAI()
+			options := runOptions{
+				API:          api,
+				Providers:    []string{expected.Name},
+				GlobalConfig: repository.GlobalConfig,
+				Environment:  map[string]string{modelVariable: ""},
+			}
+			result := runCLI(ctx, repository.Path, options, "--auto", "--dry-run", "--providers="+expected.Name)
+			Expect(result.ExitCode).To(Equal(0), result.Output())
+			requests := api.requestsFor(expected.Name)
+			Expect(requests).To(HaveLen(1))
+			Expect(requests[0].Path).To(ContainSubstring(expected.Path))
+			Expect(string(requests[0].Body)).To(ContainSubstring(expected.BodyFragment))
+			switch expected.Name {
+			case providerOpenAI:
+				Expect(string(requests[0].Body)).To(ContainSubstring(`"reasoning_effort":"none"`))
+			case providerClaude:
+				Expect(string(requests[0].Body)).To(ContainSubstring(`"effort":"low"`))
+			}
+		},
+		Entry("OpenAI", providerExpectation{
+			Name:         providerOpenAI,
+			Path:         "/v1/chat/completions",
+			BodyFragment: `"model":"gpt-6-luna"`,
+		}, "OPENAI_MODEL"),
+		Entry("Claude", providerExpectation{
+			Name:         providerClaude,
+			Path:         "/v1/messages",
+			BodyFragment: `"model":"claude-haiku-5-5"`,
+		}, "ANTHROPIC_MODEL"),
+		Entry("Gemini", providerExpectation{
+			Name:         providerGemini,
+			Path:         "/v1beta/models/gemini-3.5-flash-lite:generateContent",
+			BodyFragment: `"contents"`,
+		}, "GEMINI_MODEL"),
 	)
 
 	It("requires an explicit opt-in for authenticated OpenAI requests over HTTP", func(ctx SpecContext) {

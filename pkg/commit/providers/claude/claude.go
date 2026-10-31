@@ -14,7 +14,7 @@ import (
 const ProviderName = "claude"
 
 const (
-	defaultModel     = string(anthropic.ModelClaudeHaiku4_5)
+	defaultModel     = "claude-haiku-5-5"
 	defaultMaxTokens = 4096
 	defaultTimeout   = 10 * time.Second
 )
@@ -71,13 +71,18 @@ func (p *Claude) Ask(ctx context.Context, prompt string) ([]string, error) {
 		model = p.model
 	}
 
-	message, err := p.client.Messages.New(ctx, anthropic.MessageNewParams{
+	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(model),
 		MaxTokens: int64(defaultMaxTokens),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 		},
-	})
+	}
+	if model == defaultModel {
+		// Keep adaptive thinking small enough for the commit-message budget.
+		params.OutputConfig.Effort = anthropic.OutputConfigEffortLow
+	}
+	message, err := p.client.Messages.New(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create message: %w", err)
 	}

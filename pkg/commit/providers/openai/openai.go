@@ -15,7 +15,7 @@ import (
 const ProviderName = "openai"
 
 const (
-	defaultModel     = shared.ChatModelGPT4oMini
+	defaultModel     = shared.ChatModelGPT6Luna
 	defaultMaxTokens = 4096
 	defaultTimeout   = 10 * time.Second
 )
@@ -77,15 +77,19 @@ func (p *OpenAI) Ask(ctx context.Context, prompt string) ([]string, error) {
 		model = p.model
 	}
 
-	chatCompletion, err := p.client.Chat.Completions.New(
-		ctx, openai.ChatCompletionNewParams{
-			Messages: []openai.ChatCompletionMessageParamUnion{
-				openai.UserMessage(prompt),
-			},
-			Model:               model,
-			MaxCompletionTokens: openai.Int(defaultMaxTokens),
-			N:                   openai.Int(1), // number of candidates
-		})
+	params := openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage(prompt),
+		},
+		Model:               model,
+		MaxCompletionTokens: openai.Int(defaultMaxTokens),
+		N:                   openai.Int(1), // number of candidates
+	}
+	if model == defaultModel {
+		// Short commit messages do not need a separate reasoning budget.
+		params.ReasoningEffort = shared.ReasoningEffortNone
+	}
+	chatCompletion, err := p.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create completion: %w", err)
 	}
