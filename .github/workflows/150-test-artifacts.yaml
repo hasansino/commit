@@ -59,7 +59,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: 'Install pinned Task'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           version: '2026.9.1'
           install_args: --locked task
@@ -71,7 +71,7 @@ jobs:
           test "$(go env GOHOSTOS)" = "$EXPECTED_GOOS"
           test "$(go env GOHOSTARCH)" = "$EXPECTED_GOARCH"
       - name: 'Download artifacts from this build'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ inputs.artifact_id }}
           merge-multiple: true

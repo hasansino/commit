@@ -51,7 +51,7 @@ jobs:
           # Save lint's build outputs in the dedicated cache below.
           cache: false
       - name: 'Install pinned golangci-lint'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           version: '2026.9.1'
           install_args: --locked golangci-lint
@@ -112,7 +112,7 @@ jobs:
           go-version-file: 'go.mod'
           cache: false
       - name: 'Install pinned configuration linters'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           version: '2026.9.1'
           install_args: >-
@@ -149,7 +149,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: 'Install pinned code generation tools'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           version: '2026.9.1'
           install_args: --locked task go:go.uber.org/mock/mockgen
