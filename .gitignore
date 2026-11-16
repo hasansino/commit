@@ -1,12 +1,6 @@
-# os
 .DS_Store
-
-# ide
 .idea/
-.vscode
-
-# operations
-.build/
+.vscode/
 .tools/
 .task/
 tests/e2e/e2e.test

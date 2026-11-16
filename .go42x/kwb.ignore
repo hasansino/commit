@@ -1,6 +1,5 @@
 # go42x knowledgebase will ignore the following files and directories
 
-
 # go42x -- START
 # Local configuration and generated state.
 .go42x/go42x.local.yaml
