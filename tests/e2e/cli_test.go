@@ -34,12 +34,6 @@ func expectGitConflict(repository *gitRepository, arguments ...string) {
 	Expect(output).To(ContainSubstring("CONFLICT"))
 }
 
-func prepareMergeConflict(repository *gitRepository) {
-	GinkgoHelper()
-	createConflictingBranches(repository)
-	expectGitConflict(repository, "merge", "operation")
-}
-
 func prepareRebaseConflict(repository *gitRepository) {
 	GinkgoHelper()
 	createConflictingBranches(repository)
@@ -260,11 +254,45 @@ var _ = Describe("Repository preconditions", func() {
 			Expect(api.requestsFor(providerOpenAI)).To(BeEmpty())
 			Expect(repository.head()).To(Equal(headBeforeRun))
 		},
-		Entry("merge", "merging", operationSetup(prepareMergeConflict)),
 		Entry("rebase", "rebasing", operationSetup(prepareRebaseConflict)),
 		Entry("cherry-pick", "cherry-picking", operationSetup(prepareCherryPickConflict)),
 		Entry("revert", "reverting", operationSetup(prepareRevertConflict)),
 		Entry("bisect", "bisecting", operationSetup(prepareBisect)),
+	)
+
+	DescribeTable("concludes a resolved merge without calling AI",
+		func(ctx SpecContext, annotatedTag bool) {
+			repository := newRepository()
+			operationCommit := createConflictingBranches(repository)
+			source := "operation"
+			if annotatedTag {
+				source = "operation-tag"
+				repository.git("tag", "-a", "-m", "test: operation tag", source, operationCommit)
+			}
+			expectGitConflict(repository, "merge", "--no-edit", source)
+			headBeforeRun := repository.head()
+			repository.write("tracked.txt", "resolved\n")
+			repository.git("add", "--", "tracked.txt")
+			repository.write("local.txt", "unrelated local file\n")
+			api := newFakeAI()
+			options := openAIOptions(api)
+			options.GlobalConfig = repository.GlobalConfig
+
+			result := runCLI(ctx, repository.Path, options, "--auto", "--providers=openai")
+
+			Expect(result.ExitCode).To(Equal(0), result.Output())
+			Expect(api.requestsFor(providerOpenAI)).To(BeEmpty())
+			Expect(repository.git("show", "-s", "--format=%P", "HEAD")).
+				To(Equal(headBeforeRun + " " + operationCommit + "\n"))
+			Expect(repository.commitMessage()).
+				To(Equal("chore(git): resolve conflicts with upstream branch"))
+			Expect(repository.git("show", "HEAD:tracked.txt")).To(Equal("resolved\n"))
+			Expect(repository.gitPath("MERGE_HEAD")).NotTo(BeAnExistingFile())
+			Expect(repository.status()).To(Equal("?? local.txt\n"))
+			expectNoStagingArtifacts(repository)
+		},
+		Entry("from a branch", false),
+		Entry("from an annotated tag", true),
 	)
 
 	It("rejects externally routed Git indexes", func(ctx SpecContext) {

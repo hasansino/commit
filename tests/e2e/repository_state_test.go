@@ -46,7 +46,6 @@ var _ = Describe("Repository state isolation", func() {
 				Expect(other.git("show", "HEAD:tracked.txt")).To(ContainSubstring("independent change"))
 				Expect(selected.head()).To(Equal(selected.InitialHead))
 			},
-			Entry("merge", "MERGE_HEAD", "merging", false),
 			Entry("rebase merge", "rebase-merge", "rebasing", true),
 			Entry("rebase apply", "rebase-apply", "rebasing", true),
 			Entry("cherry-pick", "CHERRY_PICK_HEAD", "cherry-picking", false),
@@ -55,7 +54,7 @@ var _ = Describe("Repository state isolation", func() {
 		)
 	}
 
-	DescribeTable("preserves conflicts with unusual filenames and rejects an unfinished merge",
+	DescribeTable("preserves conflicts with unusual filenames and concludes the resolved merge",
 		func(ctx SpecContext, linked bool) {
 			repository := newRepository()
 			filename := "conflict file.txt"
@@ -85,6 +84,7 @@ var _ = Describe("Repository state isolation", func() {
 			options := repositoryOptions(target)
 			result := runCLI(ctx, target.Path, options, "--auto", "--providers=openai")
 			Expect(result.ExitCode).To(Equal(1))
+			Expect(result.Output()).To(ContainSubstring("unresolved conflicts detected"))
 			Expect(options.API.requestsFor(providerOpenAI)).To(BeEmpty())
 			Expect(target.indexBytes()).To(Equal(beforeIndex))
 			Expect(target.git("ls-files", "--unmerged", "-z")).To(Equal(conflicts))
@@ -93,10 +93,19 @@ var _ = Describe("Repository state isolation", func() {
 			target.write(filename, "resolved\n")
 			target.git("add", "--", filename)
 			Expect(target.git("ls-files", "--unmerged", "-z")).To(BeEmpty())
+			target.append("tracked.txt", "unstaged local change\n")
 			result = runCLI(ctx, target.Path, options, "--auto", "--providers=openai")
-			Expect(result.ExitCode).To(Equal(1))
-			Expect(result.Output()).To(ContainSubstring("merging"))
+			Expect(result.ExitCode).To(Equal(0), result.Output())
 			Expect(options.API.requestsFor(providerOpenAI)).To(BeEmpty())
+			Expect(target.git("show", "-s", "--format=%P", "HEAD")).
+				To(Equal(head + " " + strings.TrimSpace(target.git("rev-parse", "incoming")) + "\n"))
+			Expect(target.commitMessage()).
+				To(Equal("chore(git): resolve conflicts with upstream branch"))
+			Expect(target.git("show", "HEAD:"+filename)).To(Equal("resolved\n"))
+			Expect(target.git("show", "HEAD:tracked.txt")).To(Equal("initial\n"))
+			Expect(target.gitPath("MERGE_HEAD")).NotTo(BeAnExistingFile())
+			Expect(target.status()).To(Equal(" M tracked.txt\n"))
+			expectNoStagingArtifacts(target)
 			if linked {
 				repository.append("tracked.txt", "unaffected main worktree\n")
 				result = runCLI(ctx, repository.Path, repositoryOptions(repository), "--auto", "--providers=openai")

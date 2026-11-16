@@ -7,11 +7,16 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/hasansino/commit/pkg/commit/models"
 	"github.com/hasansino/commit/pkg/commit/modules"
 	"github.com/hasansino/commit/pkg/commit/ui"
 )
 
-const defaultRepoPath = "."
+const (
+	defaultRepoPath       = "."
+	mergeSuggestionSource = "merge"
+	mergeCommitMessage    = "chore(git): resolve conflicts with upstream branch"
+)
 
 type Service struct {
 	logger    *slog.Logger
@@ -99,8 +104,9 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 		return fmt.Errorf("failed to get repository state: %w", err)
 	}
 
-	if repoStateStr != RepoStateNormal {
-		s.logger.ErrorContext(ctx, "Repository not in normal state", "state", repoStateStr)
+	merging := repoStateStr == RepoStateMerging
+	if repoStateStr != RepoStateNormal && !merging {
+		s.logger.ErrorContext(ctx, "Repository not in acceptable state", "state", repoStateStr)
 		return fmt.Errorf("repository is in %s state, cannot create commit", repoStateStr)
 	}
 
@@ -130,7 +136,6 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 	if staging == nil {
 		return fmt.Errorf("failed to prepare staged files: staging session is nil")
 	}
-	stagedFiles := staging.Files
 
 	defer func() {
 		if err := s.gitOps.FinishStaging(staging); err != nil {
@@ -139,6 +144,10 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 			retErr = errors.Join(retErr, finishErr)
 		}
 	}()
+
+	if staging.IsMerge() != merging {
+		return fmt.Errorf("repository state changed while preparing the commit; rerun the command")
+	}
 
 	if staging.UsesExistingStaging() &&
 		(len(s.settings.ExcludePatterns) > 0 ||
@@ -149,20 +158,9 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 		)
 	}
 
-	if len(stagedFiles) == 0 {
+	if !merging && len(staging.Files) == 0 {
 		s.logger.WarnContext(ctx, "No files to commit")
 		return nil
-	}
-
-	s.logger.DebugContext(ctx, "Getting staged diff...")
-
-	diff, err := s.gitOps.GetStagedDiff(ctx, staging, s.settings.MaxDiffSizeBytes)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "Failed to get staged diff", "error", err)
-		return fmt.Errorf("failed to get diff: %w", err)
-	}
-	if strings.TrimSpace(diff) == "" {
-		return fmt.Errorf("staged changes produced an empty diff; cannot generate a commit message")
 	}
 
 	branch, err := s.gitOps.GetCurrentBranch(ctx)
@@ -171,17 +169,15 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 		return fmt.Errorf("failed to get current branch: %w", err)
 	}
 
-	s.logger.DebugContext(ctx, "Requesting commit messages...")
-
-	messages, err := s.aiService.GenerateCommitMessages(
-		ctx,
-		diff, branch, stagedFiles,
-		s.settings.Providers, s.settings.CustomPrompt,
-		s.settings.MultiLine,
-	)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "Failed to generate commit messages", "error", err)
-		return fmt.Errorf("failed to generate suggestions: %w", err)
+	var messages map[string]string
+	if merging {
+		s.logger.InfoContext(ctx, "Concluding merge, AI providers are not used")
+		messages = map[string]string{mergeSuggestionSource: mergeCommitMessage}
+	} else {
+		messages, err = s.suggestCommitMessages(ctx, staging, branch)
+		if err != nil {
+			return err
+		}
 	}
 
 	commitMessage, err := s.selectCommitMessage(ctx, messages, branch)
@@ -230,6 +226,41 @@ func (s *Service) Execute(ctx context.Context) (retErr error) {
 	)
 
 	return s.processPostCommit(ctx, committedMessage)
+}
+
+// suggestCommitMessages asks AI providers to describe the staged diff.
+func (s *Service) suggestCommitMessages(
+	ctx context.Context,
+	staging *models.StagingSessionState,
+	branch string,
+) (map[string]string, error) {
+	s.logger.DebugContext(ctx, "Getting staged diff...")
+
+	diff, err := s.gitOps.GetStagedDiff(ctx, staging, s.settings.MaxDiffSizeBytes)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "Failed to get staged diff", "error", err)
+		return nil, fmt.Errorf("failed to get diff: %w", err)
+	}
+	if strings.TrimSpace(diff) == "" {
+		return nil, fmt.Errorf(
+			"staged changes produced an empty diff; cannot generate a commit message",
+		)
+	}
+
+	s.logger.DebugContext(ctx, "Requesting commit messages...")
+
+	messages, err := s.aiService.GenerateCommitMessages(
+		ctx,
+		diff, branch, staging.Files,
+		s.settings.Providers, s.settings.CustomPrompt,
+		s.settings.MultiLine,
+	)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "Failed to generate commit messages", "error", err)
+		return nil, fmt.Errorf("failed to generate suggestions: %w", err)
+	}
+
+	return messages, nil
 }
 
 // selectCommitMessage handles message selection and module transformations.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 )
 
 const (
@@ -57,6 +58,44 @@ func (g *gitOperations) GetRepoState(ctx context.Context) (string, error) {
 	}
 
 	return RepoStateNormal, nil
+}
+
+// readMergeHeads returns the commits recorded in MERGE_HEAD. Entries are peeled
+// the way native git commit peels them into merge parents, so a merged
+// annotated tag resolves to its commit.
+func (g *gitOperations) readMergeHeads(ctx context.Context) ([]string, error) {
+	path, err := g.resolveGitPath(ctx, "MERGE_HEAD")
+	if err != nil {
+		return nil, err
+	}
+	// #nosec G304 -- Git resolves this worktree's MERGE_HEAD path.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read MERGE_HEAD: %w", err)
+	}
+
+	heads := make([]string, 0, 1)
+	for line := range strings.SplitSeq(string(data), "\n") {
+		entry := strings.TrimSpace(line)
+		if entry == "" {
+			continue
+		}
+		// Only full object IDs are accepted, so an entry cannot be parsed as a
+		// rev-parse option or an arbitrary revision expression.
+		if len(entry) != 40 && len(entry) != 64 ||
+			strings.Trim(entry, "0123456789abcdefABCDEF") != "" {
+			return nil, fmt.Errorf("MERGE_HEAD contains an invalid object ID %q", entry)
+		}
+		output, err := g.runGit(ctx, "", nil, "rev-parse", "--verify", "--quiet", entry+"^{commit}")
+		if err != nil {
+			return nil, fmt.Errorf("MERGE_HEAD entry %s does not name a commit: %w", entry, err)
+		}
+		heads = append(heads, strings.TrimSpace(string(output)))
+	}
+	if len(heads) == 0 {
+		return nil, fmt.Errorf("MERGE_HEAD does not name any commits")
+	}
+	return heads, nil
 }
 
 // HasConflicts reports unresolved index entries for this worktree.

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -89,7 +90,8 @@ func (g *gitOperations) BeginStaging(
 	if lockedHead != expectedHead {
 		return nil, errHeadChanged
 	}
-	if err := g.requireNormalRepositoryState(ctx); err != nil {
+	mergeHeads, err := g.requireCommittableRepositoryState(ctx)
+	if err != nil {
 		return nil, err
 	}
 
@@ -117,7 +119,9 @@ func (g *gitOperations) BeginStaging(
 	if len(intentToAddFiles) != 0 {
 		return nil, intentToAddError(intentToAddFiles)
 	}
-	usingExisting := len(stagedFiles) != 0
+	// A merge commit records the resolved index as-is; unrelated working-tree
+	// changes must not be folded into it.
+	usingExisting := len(stagedFiles) != 0 || len(mergeHeads) != 0
 
 	if err := discardLocks(headLocks); err != nil {
 		headLocks = nil
@@ -149,7 +153,8 @@ func (g *gitOperations) BeginStaging(
 		}
 	}
 
-	if len(stagedFiles) == 0 {
+	// A merge may conclude without tree changes, but it still records parents.
+	if len(stagedFiles) == 0 && len(mergeHeads) == 0 {
 		if err := cleanupPrivateIndex(privateIndexPath); err != nil {
 			return nil, err
 		}
@@ -185,6 +190,7 @@ func (g *gitOperations) BeginStaging(
 		privateIndexPath,
 		baseTree,
 		expectedHead,
+		mergeHeads,
 		indexState,
 		originalIndex.rawState(),
 		privateIndexState,
@@ -216,6 +222,7 @@ func (g *gitOperations) BeginStaging(
 		PrivateIndexState: privateIndexState,
 		BaseTree:          baseTree,
 		ExpectedHead:      expectedHead,
+		MergeHeads:        mergeHeads,
 		UsingExisting:     usingExisting,
 		Phase:             models.StagingSessionPrepared,
 		LeaseHeld:         true,
@@ -298,6 +305,7 @@ func (g *gitOperations) verifyRepositoryInputs(
 	ctx context.Context,
 	indexPath, privateIndexPath, baseTree string,
 	expectedHead models.HeadSnapshot,
+	expectedMergeHeads []string,
 	expectedIndexState []byte,
 	expectedRawIndexState models.RawIndexState,
 	expectedPrivateIndexState []byte,
@@ -309,8 +317,12 @@ func (g *gitOperations) verifyRepositoryInputs(
 	if currentHead != expectedHead {
 		return errHeadChanged
 	}
-	if err := g.requireNormalRepositoryState(ctx); err != nil {
+	mergeHeads, err := g.requireCommittableRepositoryState(ctx)
+	if err != nil {
 		return err
+	}
+	if !slices.Equal(mergeHeads, expectedMergeHeads) {
+		return errMergeChanged
 	}
 	currentIndexState, err := g.indexFingerprint(ctx, indexPath, baseTree)
 	if err != nil {
@@ -345,6 +357,9 @@ var (
 	)
 	errPrivateIndexChanged = errors.New(
 		"private git index changed while preparing the commit; rerun the command",
+	)
+	errMergeChanged = errors.New(
+		"merge state changed while preparing the commit; rerun the command",
 	)
 )
 
@@ -687,25 +702,38 @@ func writeIndexSnapshotToOpenLock(lock *os.File, snapshot indexSnapshot) error {
 	return lock.Sync()
 }
 
-func (g *gitOperations) requireNormalRepositoryState(ctx context.Context) error {
+// requireCommittableRepositoryState rejects every in-progress operation except
+// a merge, and returns the commits that native Git will record as additional
+// merge parents.
+func (g *gitOperations) requireCommittableRepositoryState(ctx context.Context) ([]string, error) {
+	merging := false
 	for _, marker := range repoStateMarkers {
 		for _, name := range marker.paths {
 			path, err := g.resolveGitPath(ctx, name)
 			if err != nil {
-				return fmt.Errorf("failed to resolve repository state marker %q: %w", name, err)
+				return nil, fmt.Errorf("failed to resolve repository state marker %q: %w", name, err)
 			}
 			_, err = os.Stat(path)
 			switch {
 			case err == nil:
-				return fmt.Errorf("cannot create a commit while repository state is %s", marker.state)
+				if marker.state != RepoStateMerging {
+					return nil, fmt.Errorf(
+						"cannot create a commit while repository state is %s",
+						marker.state,
+					)
+				}
+				merging = true
 			case os.IsNotExist(err):
 				continue
 			default:
-				return fmt.Errorf("failed to inspect repository state marker %q: %w", name, err)
+				return nil, fmt.Errorf("failed to inspect repository state marker %q: %w", name, err)
 			}
 		}
 	}
-	return nil
+	if !merging {
+		return nil, nil
+	}
+	return g.readMergeHeads(ctx)
 }
 
 func intentToAddError(files []string) error {

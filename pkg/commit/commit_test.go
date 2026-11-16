@@ -495,6 +495,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
 				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
 				session := expectStagingSession(git, []string{"file.go"}, false, nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
 				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("", nil)
 			},
 			wantErr:     true,
@@ -510,8 +511,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
 				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
 				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
-				session := expectStagingSession(git, []string{"file.go"}, false, nil)
-				git.EXPECT().GetStagedDiff(gomock.Any(), session, gomock.Any()).Return("diff content", nil)
+				expectStagingSession(git, []string{"file.go"}, false, nil)
 				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("", errors.New("branch error"))
 			},
 			wantErr:     true,
@@ -619,6 +619,114 @@ func TestService_Execute(t *testing.T) {
 			wantErr:     true,
 			wantErrIs:   commitFinalizationErr,
 			errContains: "commit created but finalization failed",
+		},
+		{
+			name: "unresolved merge conflicts are rejected",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateMerging, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(true, []string{"file.go"}, nil)
+			},
+			wantErr:     true,
+			errContains: "unresolved conflicts detected",
+		},
+		{
+			name: "resolved merge is committed without asking AI providers",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+			},
+			aiAdapter: &simpleTestAdapter{
+				hasProviders: true,
+				genErr:       errors.New("AI providers must not be asked"),
+			},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateMerging, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				session := &models.StagingSessionState{
+					Files:         []string{"file.go"},
+					MergeHeads:    []string{"0123456789abcdef0123456789abcdef01234567"},
+					UsingExisting: true,
+				}
+				git.EXPECT().BeginStaging(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(session, nil)
+				git.EXPECT().FinishStaging(session).Return(nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
+				git.EXPECT().CreateCommit(gomock.Any(), session, mergeCommitMessage).
+					Return(models.CommitResult{Message: mergeCommitMessage}, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "resolved merge without tree changes is still committed",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+			},
+			aiAdapter: &simpleTestAdapter{
+				hasProviders: true,
+				genErr:       errors.New("AI providers must not be asked"),
+			},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateMerging, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				session := &models.StagingSessionState{
+					MergeHeads:    []string{"0123456789abcdef0123456789abcdef01234567"},
+					UsingExisting: true,
+				}
+				git.EXPECT().BeginStaging(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(session, nil)
+				git.EXPECT().FinishStaging(session).Return(nil)
+				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
+				git.EXPECT().CreateCommit(gomock.Any(), session, mergeCommitMessage).
+					Return(models.CommitResult{Message: mergeCommitMessage}, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "merge concluded by another process is rejected",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateMerging, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				expectStagingSession(git, []string{"file.go"}, true, nil)
+			},
+			wantErr:     true,
+			errContains: "repository state changed while preparing the commit",
+		},
+		{
+			name: "merge started by another process is rejected",
+			settings: &Settings{
+				Timeout: 30 * time.Second,
+				Auto:    true,
+			},
+			aiAdapter: &simpleTestAdapter{hasProviders: true, commitMsg: "test commit"},
+			setupMocks: func(git *mocks.MockgitOperationsAccessor) {
+				git.EXPECT().IsGitRepository(gomock.Any()).Return(true)
+				git.EXPECT().GetRepoState(gomock.Any()).Return(RepoStateNormal, nil)
+				git.EXPECT().HasConflicts(gomock.Any()).Return(false, []string{}, nil)
+				session := &models.StagingSessionState{
+					Files:      []string{"file.go"},
+					MergeHeads: []string{"0123456789abcdef0123456789abcdef01234567"},
+				}
+				git.EXPECT().BeginStaging(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(session, nil)
+				git.EXPECT().FinishStaging(session).Return(nil)
+			},
+			wantErr:     true,
+			errContains: "repository state changed while preparing the commit",
 		},
 		{
 			name: "successful commit",

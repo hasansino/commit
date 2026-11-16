@@ -43,6 +43,7 @@ type StagingSessionState struct {
 	PrivateIndexState []byte
 	BaseTree          string
 	ExpectedHead      HeadSnapshot
+	MergeHeads        []string
 	UsingExisting     bool
 	Phase             StagingSessionPhase
 	Closed            bool
@@ -54,6 +55,11 @@ type StagingSessionState struct {
 // staged index rather than staging working-tree changes itself.
 func (s *StagingSessionState) UsesExistingStaging() bool {
 	return s != nil && s.UsingExisting
+}
+
+// IsMerge reports whether the session concludes an in-progress merge.
+func (s *StagingSessionState) IsMerge() bool {
+	return s != nil && len(s.MergeHeads) != 0
 }
 
 // CommitResult identifies the commit created by native Git and records its

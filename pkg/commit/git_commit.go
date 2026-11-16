@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -131,6 +132,7 @@ func (g *gitOperations) CreateCommit(
 		state.PrivateIndexPath,
 		state.BaseTree,
 		state.ExpectedHead,
+		state.MergeHeads,
 		state.IndexState,
 		state.RawIndexState,
 		state.PrivateIndexState,
@@ -268,7 +270,12 @@ func (g *gitOperations) CreateCommit(
 		)
 	}
 
-	directChild, err := g.isDirectChild(reconcileContext, state.ExpectedHead, currentHead)
+	directChild, err := g.isDirectChild(
+		reconcileContext,
+		state.ExpectedHead,
+		state.MergeHeads,
+		currentHead,
+	)
 	if err != nil || !directChild || currentHead.Name != state.ExpectedHead.Name {
 		if err == nil {
 			err = fmt.Errorf("HEAD did not advance to a direct child of the expected commit")
@@ -430,9 +437,13 @@ func (g *gitOperations) requireCommitRecovery(
 	return recovery
 }
 
+// isDirectChild reports whether current was committed on top of expected. A
+// merge commit may also record parents from MERGE_HEAD.
 func (g *gitOperations) isDirectChild(
 	ctx context.Context,
-	expected, current models.HeadSnapshot,
+	expected models.HeadSnapshot,
+	mergeHeads []string,
+	current models.HeadSnapshot,
 ) (bool, error) {
 	if current.Hash == "" {
 		return false, nil
@@ -454,7 +465,17 @@ func (g *gitOperations) isDirectChild(
 	if expected.Hash == "" {
 		return len(parents) == 0, nil
 	}
-	return len(parents) == 1 && parents[0] == expected.Hash, nil
+	if len(parents) == 0 || parents[0] != expected.Hash {
+		return false, nil
+	}
+	// Native Git drops merge parents already reachable from another parent,
+	// so only require that every remaining parent came from MERGE_HEAD.
+	for _, parent := range parents[1:] {
+		if !slices.Contains(mergeHeads, parent) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (g *gitOperations) privateIndexMatchesCommit(
