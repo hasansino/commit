@@ -1,4 +1,6 @@
-# Project context
+# Agent instructions
+
+## Project context
 
 {{/*
 The context block owns field selection, names, nesting, and order.
@@ -6,12 +8,17 @@ Use yamlValue for dynamic values and keys; it handles quoting and escaping.
 The omit-empty option removes nulls, empty strings, and empty collections recursively.
 False, zero, and whitespace-only strings are preserved. Omit the option to keep all values.
 Instruction chunks below remain Markdown.
+Rendered instructions must have one H1 title and must not skip heading levels.
+Each chunk's first heading must be one level below the section containing the
+chunks placeholder. Chunk headings must remain inside that section.
 */ -}}
 {{ define "context" -}}
 project:
   name: {{ yamlValue .project.name }}
   description: {{ yamlValue .project.description }}
   language: {{ yamlValue .project.language }}
+  repository: {{ yamlValue .project.repository }}
+  documentation-entrypoint: {{ yamlValue (index .project "documentation-entrypoint") }}
   tags: {{ yamlValue .project.tags }}
   metadata: {{ yamlValue .project.metadata }}
 repository:
@@ -21,7 +28,6 @@ environment:
   os: {{ yamlValue .environment.os }}
   arch: {{ yamlValue .environment.arch }}
   is_ci: {{ yamlValue .environment.is_ci }}
-  ci_mode: {{ yamlValue .environment.ci_mode }}
   working_dir: {{ yamlValue .environment.working_dir }}
   variables: {{ yamlValue .environment.variables }}
 golang:
@@ -51,17 +57,6 @@ github_actions:
     url: {{ yamlValue .github_actions.issue.url }}
     body: {{ yamlValue .github_actions.issue.body }}
   user_request: {{ yamlValue .github_actions.user_request }}
-{{ $hasMCP := false }}
-{{ range .mcp }}{{ if .Enabled }}{{ $hasMCP = true }}{{ end }}{{ end }}
-{{ if $hasMCP }}
-mcp:
-  tools: all_exposed
-  servers:
-{{ range $name, $server := .mcp }}{{ if $server.Enabled }}
-    {{ yamlValue $name }}:
-      transport: {{ yamlValue $server.Transport }}
-{{ end }}{{ end }}
-{{ end }}
 {{ end -}}
 
 {{ yamlBlock "context" . "omit-empty" }}
