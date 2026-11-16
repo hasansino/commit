@@ -293,18 +293,17 @@ var _ = Describe("Interactive terminal workflow", func() {
 			repository.Path,
 			options,
 			func(terminal *os.File, output *gbytes.Buffer) {
-				Expect(output.Clear()).To(Succeed())
+				// Wait for each toggle to render before the next key: bubbletea
+				// merges printable bytes from one read into a single key message
+				// ("35"), which matches no checkbox.
 				_, err := terminal.Write([]byte("3"))
 				Expect(err).NotTo(HaveOccurred())
-				Eventually(
-					func() int { return len(output.Contents()) },
-				).WithContext(ctx).WithTimeout(commandTimeout).Should(BeNumerically(">", 0))
-				Expect(output.Clear()).To(Succeed())
+				Eventually(output).WithContext(ctx).WithTimeout(commandTimeout).
+					Should(gbytes.Say(`● Tag \(major\)`))
 				_, err = terminal.Write([]byte("5"))
 				Expect(err).NotTo(HaveOccurred())
-				Eventually(
-					func() int { return len(output.Contents()) },
-				).WithContext(ctx).WithTimeout(commandTimeout).Should(BeNumerically(">", 0))
+				Eventually(output).WithContext(ctx).WithTimeout(commandTimeout).
+					Should(gbytes.Say(`○ Tag \(major\).*● Tag \(patch\)`))
 				_, err = terminal.Write([]byte("\r"))
 				Expect(err).NotTo(HaveOccurred())
 			},
