@@ -69,6 +69,14 @@ type CommitResult struct {
 	Message string
 }
 
+// PushResult identifies where the current branch was pushed and the review
+// URL for it, when one could be determined.
+type PushResult struct {
+	Remote          string
+	Branch          string
+	MergeRequestURL string
+}
+
 // CommitRecoveryError means automatic rollback or index promotion would risk
 // losing repository state. The retained paths are available for inspection
 // and manual recovery.

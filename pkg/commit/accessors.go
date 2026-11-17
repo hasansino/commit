@@ -50,11 +50,11 @@ type gitOperationsAccessor interface {
 		session *models.StagingSessionState,
 		message string,
 	) (models.CommitResult, error)
-	Push(ctx context.Context) (string, error)
+	Push(ctx context.Context) (models.PushResult, error)
 	GetLatestTag(ctx context.Context) (string, error)
 	IncrementVersion(currentTag, incrementType string) (string, error)
 	CreateTag(ctx context.Context, tag, message string) error
-	PushTag(ctx context.Context, tag string) error
+	PushTag(ctx context.Context, tag string) (remote string, err error)
 }
 
 var _ gitOperationsAccessor = (*gitOperations)(nil)

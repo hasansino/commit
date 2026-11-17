@@ -380,15 +380,19 @@ func (s *Service) processPostCommit(ctx context.Context, commitMessage string) e
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("push canceled after commit: %w", err)
 		}
-		mrURL, err := s.gitOps.Push(ctx)
+		pushResult, err := s.gitOps.Push(ctx)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "Failed to push to remote", "error", err)
 			return fmt.Errorf("failed to push: %w", err)
 		}
-		s.logger.InfoContext(ctx, "Successfully pushed to remote")
+		s.logger.InfoContext(
+			ctx, "Successfully pushed to remote",
+			"remote", pushResult.Remote,
+			"branch", pushResult.Branch,
+		)
 
-		if mrURL != "" {
-			s.logger.InfoContext(ctx, "Create merge/pull request", "url", mrURL)
+		if pushResult.MergeRequestURL != "" {
+			s.logger.InfoContext(ctx, "Create merge/pull request", "url", pushResult.MergeRequestURL)
 		}
 	}
 
@@ -461,11 +465,12 @@ func (s *Service) processPostCommit(ctx context.Context, commitMessage string) e
 			if err := ctx.Err(); err != nil {
 				return fmt.Errorf("tag push canceled after tag creation: %w", err)
 			}
-			if err := s.gitOps.PushTag(ctx, newTag); err != nil {
+			remote, err := s.gitOps.PushTag(ctx, newTag)
+			if err != nil {
 				s.logger.ErrorContext(ctx, "Failed to push tag", "tag", newTag, "error", err)
 				return fmt.Errorf("failed to push tag %s: %w", newTag, err)
 			}
-			s.logger.InfoContext(ctx, "Tag pushed to remote", "tag", newTag)
+			s.logger.InfoContext(ctx, "Tag pushed to remote", "tag", newTag, "remote", remote)
 		}
 	}
 

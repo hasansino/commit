@@ -422,10 +422,10 @@ func (mr *MockgitOperationsAccessorMockRecorder) IsGitRepository(ctx any) *gomoc
 }
 
 // Push mocks base method.
-func (m *MockgitOperationsAccessor) Push(ctx context.Context) (string, error) {
+func (m *MockgitOperationsAccessor) Push(ctx context.Context) (models.PushResult, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Push", ctx)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(models.PushResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -437,11 +437,12 @@ func (mr *MockgitOperationsAccessorMockRecorder) Push(ctx any) *gomock.Call {
 }
 
 // PushTag mocks base method.
-func (m *MockgitOperationsAccessor) PushTag(ctx context.Context, tag string) error {
+func (m *MockgitOperationsAccessor) PushTag(ctx context.Context, tag string) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PushTag", ctx, tag)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // PushTag indicates an expected call of PushTag.

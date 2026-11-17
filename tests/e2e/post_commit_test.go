@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"net/url"
+	"regexp"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -148,9 +149,13 @@ var _ = Describe("Push behavior", func() {
 			)
 
 			Expect(result.ExitCode).To(Equal(0))
-			Expect(result.Output()).To(ContainSubstring("Successfully pushed"))
+			// Attribute keys carry ANSI styling, so match around it.
+			Expect(result.Output()).To(MatchRegexp(
+				`Successfully pushed to remote.*remote=.*origin.*branch=.*%s`,
+				regexp.QuoteMeta(branch),
+			))
 			Expect(result.Output()).To(ContainSubstring(expectedURL))
-			Expect(result.Output()).To(ContainSubstring("Tag pushed to remote"))
+			Expect(result.Output()).To(MatchRegexp(`Tag pushed to remote.*tag=.*v0\.0\.1.*remote=.*origin`))
 			remoteBranch := strings.TrimSpace(repository.git("ls-remote", bareRemote, "refs/heads/"+branch))
 			Expect(remoteBranch).To(HavePrefix(repository.head()))
 			remoteTag := strings.TrimSpace(repository.git("ls-remote", bareRemote, "refs/tags/v0.0.1^{}"))

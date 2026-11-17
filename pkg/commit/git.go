@@ -137,7 +137,7 @@ func (g *gitOperations) IsGitRepository(ctx context.Context) bool {
 	return err == nil && strings.TrimSpace(string(output)) == "true"
 }
 
-func (g *gitOperations) Push(ctx context.Context) (string, error) {
+func (g *gitOperations) Push(ctx context.Context) (models.PushResult, error) {
 	return g.pushNative(ctx)
 }
 
@@ -149,7 +149,7 @@ func (g *gitOperations) CreateTag(ctx context.Context, tag, message string) erro
 	return g.createTagNative(ctx, tag, message)
 }
 
-func (g *gitOperations) PushTag(ctx context.Context, tag string) error {
+func (g *gitOperations) PushTag(ctx context.Context, tag string) (string, error) {
 	return g.pushTagNative(ctx, tag)
 }
 

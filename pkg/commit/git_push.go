@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/hasansino/commit/pkg/commit/models"
 )
 
 type nativePushTarget struct {
@@ -78,10 +80,10 @@ func (e *TagCreationOutcomeError) Unwrap() error {
 	return e.Cause
 }
 
-func (g *gitOperations) pushNative(ctx context.Context) (string, error) {
+func (g *gitOperations) pushNative(ctx context.Context) (models.PushResult, error) {
 	target, err := g.resolveNativePushTarget(ctx)
 	if err != nil {
-		return "", err
+		return models.PushResult{}, err
 	}
 
 	refspec := target.localRef + ":" + target.remoteRef
@@ -97,9 +99,9 @@ func (g *gitOperations) pushNative(ctx context.Context) (string, error) {
 		pushArgs...,
 	); err != nil {
 		if dispatchErr := nativeRemoteDispatchError(err, "branch push"); dispatchErr != nil {
-			return "", dispatchErr
+			return models.PushResult{}, dispatchErr
 		}
-		return "", fmt.Errorf(
+		return models.PushResult{}, fmt.Errorf(
 			"failed to push %s to %s as %s: %w",
 			target.localRef,
 			target.remote,
@@ -108,7 +110,11 @@ func (g *gitOperations) pushNative(ctx context.Context) (string, error) {
 		)
 	}
 
-	return g.nativeMergeRequestURL(ctx, target), nil
+	return models.PushResult{
+		Remote:          target.remote,
+		Branch:          strings.TrimPrefix(target.remoteRef, "refs/heads/"),
+		MergeRequestURL: g.nativeMergeRequestURL(ctx, target),
+	}, nil
 }
 
 func (g *gitOperations) getLatestTagNative(ctx context.Context) (string, error) {
@@ -229,28 +235,28 @@ func (g *gitOperations) nativeExactRefOID(
 	return objectID, true, nil
 }
 
-func (g *gitOperations) pushTagNative(ctx context.Context, tagName string) error {
+func (g *gitOperations) pushTagNative(ctx context.Context, tagName string) (string, error) {
 	tagRef, err := g.validateNativeTagRef(ctx, tagName)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if _, err := g.runGit(ctx, "", nil, "show-ref", "--verify", "--quiet", tagRef); err != nil {
 		if nativeGitCommandExitedWith(err, 1) {
-			return fmt.Errorf("tag %q does not exist", tagName)
+			return "", fmt.Errorf("tag %q does not exist", tagName)
 		}
-		return fmt.Errorf("failed to resolve tag %q: %w", tagName, err)
+		return "", fmt.Errorf("failed to resolve tag %q: %w", tagName, err)
 	}
 
 	branch, _, err := g.nativeAttachedBranch(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	remote, err := g.resolveNativePushRemote(ctx, branch)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := g.requireNonMirrorPushRemote(ctx, remote); err != nil {
-		return err
+		return "", err
 	}
 
 	if _, err := g.runGit(
@@ -264,11 +270,11 @@ func (g *gitOperations) pushTagNative(ctx context.Context, tagName string) error
 		tagRef+":"+tagRef,
 	); err != nil {
 		if dispatchErr := nativeRemoteDispatchError(err, "tag push"); dispatchErr != nil {
-			return dispatchErr
+			return "", dispatchErr
 		}
-		return fmt.Errorf("failed to push tag %s to %s: %w", tagRef, remote, err)
+		return "", fmt.Errorf("failed to push tag %s to %s: %w", tagRef, remote, err)
 	}
-	return nil
+	return remote, nil
 }
 
 func (g *gitOperations) resolveNativePushTarget(ctx context.Context) (nativePushTarget, error) {

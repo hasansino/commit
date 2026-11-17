@@ -766,7 +766,11 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
 				git.EXPECT().CreateCommit(gomock.Any(), session, "test commit").
 					Return(models.CommitResult{Message: "test commit"}, nil)
-				git.EXPECT().Push(gomock.Any()).Return("https://github.com/user/repo/pull/new", nil)
+				git.EXPECT().Push(gomock.Any()).Return(models.PushResult{
+					Remote:          "origin",
+					Branch:          "main",
+					MergeRequestURL: "https://github.com/user/repo/pull/new",
+				}, nil)
 			},
 			wantErr: false,
 		},
@@ -788,7 +792,7 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
 				git.EXPECT().CreateCommit(gomock.Any(), session, "test commit").
 					Return(models.CommitResult{Message: "test commit"}, nil)
-				git.EXPECT().Push(gomock.Any()).Return("", errors.New("push error"))
+				git.EXPECT().Push(gomock.Any()).Return(models.PushResult{}, errors.New("push error"))
 			},
 			wantErr:     true,
 			errContains: "failed to push",
@@ -836,11 +840,11 @@ func TestService_Execute(t *testing.T) {
 				git.EXPECT().GetCurrentBranch(gomock.Any()).Return("main", nil)
 				git.EXPECT().CreateCommit(gomock.Any(), session, "test commit").
 					Return(models.CommitResult{Message: "test commit"}, nil)
-				git.EXPECT().Push(gomock.Any()).Return("", nil)
+				git.EXPECT().Push(gomock.Any()).Return(models.PushResult{}, nil)
 				git.EXPECT().GetLatestTag(gomock.Any()).Return("v1.0.0", nil)
 				git.EXPECT().IncrementVersion("v1.0.0", "minor").Return("v1.1.0", nil)
 				git.EXPECT().CreateTag(gomock.Any(), "v1.1.0", "test commit").Return(nil)
-				git.EXPECT().PushTag(gomock.Any(), "v1.1.0").Return(nil)
+				git.EXPECT().PushTag(gomock.Any(), "v1.1.0").Return("origin", nil)
 			},
 			wantErr: false,
 		},
@@ -906,11 +910,11 @@ func TestService_Execute_PropagatesContextAndUsesCommittedMessage(t *testing.T) 
 	git.EXPECT().GetCurrentBranch(ctx).Return("main", nil)
 	git.EXPECT().CreateCommit(ctx, session, selectedMessage).
 		Return(models.CommitResult{Message: committedMessage}, nil)
-	git.EXPECT().Push(ctx).Return("", nil)
+	git.EXPECT().Push(ctx).Return(models.PushResult{}, nil)
 	git.EXPECT().GetLatestTag(ctx).Return("v1.0.0", nil)
 	git.EXPECT().IncrementVersion("v1.0.0", "patch").Return("v1.0.1", nil)
 	git.EXPECT().CreateTag(ctx, "v1.0.1", committedMessage).Return(nil)
-	git.EXPECT().PushTag(ctx, "v1.0.1").Return(nil)
+	git.EXPECT().PushTag(ctx, "v1.0.1").Return("origin", nil)
 
 	service := &Service{
 		logger: slog.New(slog.DiscardHandler),
@@ -967,6 +971,38 @@ func TestService_Execute_CanceledImmediatelyBeforeCommit(t *testing.T) {
 	err := service.Execute(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Execute() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestService_ProcessPostCommit_LogsPushDestination(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	git := mocks.NewMockgitOperationsAccessor(ctrl)
+	git.EXPECT().Push(gomock.Any()).Return(models.PushResult{
+		Remote: "upstream",
+		Branch: "feature/APP-42",
+	}, nil)
+	git.EXPECT().GetLatestTag(gomock.Any()).Return("v1.0.0", nil)
+	git.EXPECT().IncrementVersion("v1.0.0", "patch").Return("v1.0.1", nil)
+	git.EXPECT().CreateTag(gomock.Any(), "v1.0.1", "committed message").Return(nil)
+	git.EXPECT().PushTag(gomock.Any(), "v1.0.1").Return("upstream", nil)
+
+	var logs bytes.Buffer
+	service := &Service{
+		logger:   slog.New(slog.NewTextHandler(&logs, nil)),
+		settings: &Settings{Push: true, Tag: "patch"},
+		gitOps:   git,
+	}
+	if err := service.processPostCommit(context.Background(), "committed message"); err != nil {
+		t.Fatalf("processPostCommit() error = %v", err)
+	}
+
+	for _, want := range []string{
+		`msg="Successfully pushed to remote" remote=upstream branch=feature/APP-42`,
+		`msg="Tag pushed to remote" tag=v1.0.1 remote=upstream`,
+	} {
+		if got := logs.String(); !containsString(got, want) {
+			t.Fatalf("push log = %q, want containing %q", got, want)
+		}
 	}
 }
 
@@ -1071,9 +1107,9 @@ func TestService_ProcessPostCommit_CancellationGates(t *testing.T) {
 		git := mocks.NewMockgitOperationsAccessor(ctrl)
 		ctx, cancel := context.WithCancel(context.Background())
 
-		git.EXPECT().Push(ctx).DoAndReturn(func(context.Context) (string, error) {
+		git.EXPECT().Push(ctx).DoAndReturn(func(context.Context) (models.PushResult, error) {
 			cancel()
-			return "", nil
+			return models.PushResult{}, nil
 		})
 
 		service := &Service{
@@ -1092,7 +1128,7 @@ func TestService_ProcessPostCommit_CancellationGates(t *testing.T) {
 		git := mocks.NewMockgitOperationsAccessor(ctrl)
 		ctx, cancel := context.WithCancel(context.Background())
 
-		git.EXPECT().Push(ctx).Return("", nil)
+		git.EXPECT().Push(ctx).Return(models.PushResult{}, nil)
 		git.EXPECT().GetLatestTag(ctx).Return("v1.0.0", nil)
 		git.EXPECT().IncrementVersion("v1.0.0", "patch").Return("v1.0.1", nil)
 		git.EXPECT().CreateTag(ctx, "v1.0.1", "committed message").
