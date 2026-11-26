@@ -31,12 +31,6 @@ jobs:
     timeout-minutes: ${{ inputs.timeout_minutes }}
     permissions:
       contents: read
-    env:
-      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-      MISE_DATA_DIR: ${{ github.workspace }}/.tools
-      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
-      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
-      GOLANGCI_LINT_CACHE: ${{ github.workspace }}/.build/golangci-lint-cache
     # ----
     steps:
       - name: 'Checkout repository'
@@ -45,35 +39,30 @@ jobs:
           persist-credentials: false
       - name: 'Setup Go'
         id: setup-go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
-          go-version-file: 'go.mod'
-          # Save lint's build outputs in the dedicated cache below.
-          cache: false
+          cache-scope: golangci-lint
       - name: 'Install pinned golangci-lint'
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: --locked golangci-lint
+          install-args: --locked golangci-lint
+      - name: 'Locate golangci-lint results in the build cache'
+        shell: bash
+        run: echo "GOLANGCI_LINT_CACHE=$GITHUB_WORKSPACE/$BUILD_CACHE_DIR/golangci-lint" >> "$GITHUB_ENV"
       - name: 'Get lint cache metadata'
         id: lint-cache
         shell: bash
         run: |-
           {
-            echo "go-build=$(go env GOCACHE)"
-            echo "go-mod=$(go env GOMODCACHE)"
             echo "lint-version=$(golangci-lint version --short)"
           } >> "$GITHUB_OUTPUT"
-      - name: 'Restore and save Go and golangci-lint caches'
+      - name: 'Restore and save golangci-lint results'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         env:
-          LINT_CACHE_PREFIX: golangci-lint-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{
+          LINT_CACHE_PREFIX: golangci-lint-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{
             steps.lint-cache.outputs.lint-version }}
         with:
-          # Analysis also needs compiled Go packages, not just linter results.
           path: |-
-            ${{ steps.lint-cache.outputs.go-build }}
-            ${{ steps.lint-cache.outputs.go-mod }}
             ${{ env.GOLANGCI_LINT_CACHE }}
           # Refresh per commit; reuse compatible entries after dependency/config changes.
           key: ${{ env.LINT_CACHE_PREFIX }}-${{ hashFiles('etc/golangci.yml', 'go.mod', 'go.sum') }}-${{ github.sha }}
@@ -84,6 +73,41 @@ jobs:
         run: golangci-lint config verify --config etc/golangci.yml
       - name: 'Run golangci-lint'
         run: golangci-lint run --config etc/golangci.yml --verbose
+
+  # Detect potential nil panics with NilAway through Go's cached vet driver.
+  # @see https://github.com/uber-go/nilaway
+  nilaway-lint:
+    name: nilaway-lint
+    runs-on: ${{ inputs.runs_on }}
+    # NilAway findings remain advisory.
+    continue-on-error: true
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Setup Go'
+        id: setup-go
+        uses: ./.github/actions/setup-go
+        with:
+          cache-scope: nilaway
+      - name: 'Install pinned NilAway'
+        uses: ./.github/actions/setup-tools
+        with:
+          install-args: --locked nilaway
+      - name: 'Run NilAway'
+        shell: bash
+        run: |-
+          go vet -vettool="$(mise which nilaway)" \
+            -include-pkgs=github.com/hasansino/commit \
+            -exclude-file-docstrings='Code generated' \
+            -include-errors-in-files="$(pwd -P)" \
+            -pretty-print=false \
+            -print-full-file-path=true \
+            ./...
 
   # JSON, YAML, and TOML formatting and lint rules.
   # @see https://github.com/caarlos0/jsonfmt
@@ -96,35 +120,70 @@ jobs:
     timeout-minutes: ${{ inputs.timeout_minutes }}
     permissions:
       contents: read
-    env:
-      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-      MISE_DATA_DIR: ${{ github.workspace }}/.tools
-      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
-      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
     steps:
       - name: 'Checkout repository'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
-          go-version-file: 'go.mod'
           cache: false
       - name: 'Install pinned configuration linters'
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: >-
-            --locked task actionlint go:github.com/caarlos0/jsonfmt go:github.com/google/yamlfmt/cmd/yamlfmt tombi
+          install-args: --locked jsonfmt yamlfmt tombi
       - name: 'Check JSON formatting'
         run: task --exit-code lint:json
       - name: 'Check YAML formatting'
         run: task --exit-code lint:yaml
       - name: 'Check TOML formatting and lint rules'
         run: task --exit-code lint:toml
-      - name: 'Check GitHub Actions workflows'
+
+  # GitHub Actions syntax and security, through the same task as local runs.
+  # @see https://github.com/rhysd/actionlint
+  # @see https://github.com/zizmor-labs/zizmor
+  action-lint:
+    name: action-lint
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Install pinned workflow linters'
+        uses: ./.github/actions/setup-tools
+        with:
+          install-args: --locked actionlint zizmor
+      - name: 'Check GitHub Actions with actionlint and zizmor'
         run: task --exit-code lint:actions
+
+  # EditorConfig linter.
+  # @see https://editorconfig-checker.github.io/
+  editorconfig-lint:
+    name: editorconfig-lint
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    # ----
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Install pinned EditorConfig Checker'
+        uses: ./.github/actions/setup-tools
+        with:
+          install-args: --locked editorconfig-checker
+      - name: 'Run editorconfig-checker'
+        shell: bash
+        run: task lint:editorconfig
 
   # Ensure generated files and Go module metadata are committed and up to date.
   project-lint:
@@ -134,36 +193,28 @@ jobs:
     timeout-minutes: ${{ inputs.timeout_minutes }}
     permissions:
       contents: read
-    env:
-      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-      MISE_DATA_DIR: ${{ github.workspace }}/.tools
-      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
-      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
     steps:
       - name: 'Checkout repository'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
-          go-version-file: 'go.mod'
-      - name: 'Install pinned code generation tools'
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
-        with:
-          version: '2026.9.1'
-          install_args: --locked task go:go.uber.org/mock/mockgen
+          cache-scope: generators
+      - name: 'Install mise and Task'
+        uses: ./.github/actions/setup-tools
       - name: 'Generate code'
-        run: task generate
+        run: task generate:code
       - name: 'Check for uncommitted changes'
         shell: bash
         run: |-
           if [[ -n $(git status --porcelain) ]]; then
-            echo "Uncommitted changes detected after running 'task generate'"
+            echo "Uncommitted changes detected after running 'task generate:code'"
             echo "The following files have changes:"
             git status --porcelain
             echo ""
-            echo "Please run 'task setup && task generate' locally and commit the changes."
+            echo "Please run 'task setup && task generate:code' locally and commit the changes."
             exit 1
           else
             echo "No uncommitted changes detected"

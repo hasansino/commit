@@ -126,7 +126,7 @@ func (g *gitOperations) GetConflictedFiles(ctx context.Context) ([]string, error
 
 	seen := make(map[string]struct{})
 	files := make([]string, 0)
-	for _, part := range bytes.Split(output, []byte{0}) {
+	for part := range bytes.SplitSeq(output, []byte{0}) {
 		if len(part) == 0 {
 			continue
 		}

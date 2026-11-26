@@ -6,15 +6,19 @@
 #   https://taskfile.dev/schema.json
 
 # ╭────────────────────----------------──────────╮
-# │                     commit                    │
+# │                     commit                   │
 # ╰─────────────────────----------------─────────╯
 #
 # Before running any commands, ensure following tools are installed:
+# - git @see https://git-scm.com/
 # - go @see https://go.dev/
 # - mise @see https://mise.jdx.dev/
 # - task @see https://taskfile.dev/
 #
 # This file can be executed manually, from CI, by IDE and invoked by AI.
+#
+# Write all task summaries as multiline literal blocks (summary: |-).
+# Keep summary source lines at most 120 characters long, including indentation.
 
 version: '3'
 
@@ -23,8 +27,13 @@ set:
   - pipefail
 
 vars:
-  # Task's env cannot override an inherited PATH; resolve pinned tools explicitly.
-  TOOLS_BIN: '{{.ROOT_DIR}}/.tools/shims'
+  # Relative to the repository root: tasks and CI join it to $PWD or $GITHUB_WORKSPACE.
+  BUILD_DIR: .build
+  BUILD_BIN_DIR: '{{.BUILD_DIR}}/bin'
+  BUILD_DIST_DIR: '{{.BUILD_DIR}}/dist'
+  BUILD_REPORTS_DIR: '{{.BUILD_DIR}}/reports'
+  BUILD_CACHE_DIR: '{{.BUILD_DIR}}/cache'
+  BUILD_TMP_DIR: '{{.BUILD_DIR}}/tmp'
 
 env:
   GOTOOLCHAIN: local
@@ -32,14 +41,15 @@ env:
   MISE_DATA_DIR: '{{.ROOT_DIR}}/.tools'
   MISE_CACHE_DIR: '{{.ROOT_DIR}}/.tools/cache'
   MISE_STATE_DIR: '{{.ROOT_DIR}}/.tools/state'
-  MISE_EXEC_AUTO_INSTALL: 'false'
   TASK_TEMP_DIR: '{{.ROOT_DIR}}/.tools/task'
+  BUILD_DIR: '{{.BUILD_DIR}}'
+  BUILD_BIN_DIR: '{{.BUILD_BIN_DIR}}'
+  BUILD_DIST_DIR: '{{.BUILD_DIST_DIR}}'
+  BUILD_REPORTS_DIR: '{{.BUILD_REPORTS_DIR}}'
+  BUILD_CACHE_DIR: '{{.BUILD_CACHE_DIR}}'
+  BUILD_TMP_DIR: '{{.BUILD_TMP_DIR}}'
 
 tasks:
-
-  # ╭────────────────────----------------──────────╮
-  # │                    Setup                     │
-  # ╰─────────────────────----------------─────────╯
 
   help:
     desc: "List available tasks in Taskfile order"
@@ -48,16 +58,98 @@ tasks:
     cmds:
       - "task --list --sort none"
 
+  env:export:
+    desc: "Print the project tooling environment as KEY=value lines"
+    summary: |-
+      Usage: task env:export
+      Prints project variables for CI setup and editor configuration.
+    silent: true
+    cmds:
+      - |
+        printf '%s\n' \
+          "GOTOOLCHAIN=$GOTOOLCHAIN" \
+          "MISE_DEFAULT_CONFIG_FILENAME=$MISE_DEFAULT_CONFIG_FILENAME" \
+          "MISE_DATA_DIR=$MISE_DATA_DIR" \
+          "MISE_CACHE_DIR=$MISE_CACHE_DIR" \
+          "MISE_STATE_DIR=$MISE_STATE_DIR" \
+          "TASK_TEMP_DIR=$TASK_TEMP_DIR" \
+          "BUILD_DIR=$BUILD_DIR" \
+          "BUILD_BIN_DIR=$BUILD_BIN_DIR" \
+          "BUILD_DIST_DIR=$BUILD_DIST_DIR" \
+          "BUILD_REPORTS_DIR=$BUILD_REPORTS_DIR" \
+          "BUILD_CACHE_DIR=$BUILD_CACHE_DIR" \
+          "BUILD_TMP_DIR=$BUILD_TMP_DIR"
+
+  # ╭────────────────────----------------──────────╮
+  # │                   Tooling                    │
+  # ╰─────────────────────----------------─────────╯
+
   x:
-    desc: "Run the pinned go42x CLI"
-    summary: "Usage: task x [-- COMMAND ...]"
+    desc: "Run go42x from the mise-pinned release"
+    summary: |-
+      Usage: task x [-- COMMAND ...]
     interactive: true
     cmds:
-      - '"{{.TOOLS_BIN}}/go42x" {{.CLI_ARGS}}'
+      - 'mise exec -- go42x {{.CLI_ARGS}}'
+
+  x:update:
+    desc: "Update go42x and merge bundled assets with project customizations (writes)"
+    summary: |-
+      Usage: task x:update [VERSION=<version>]
+      Defaults to the latest available release. Updates mise, merges released assets, generates agent files,
+      and refreshes the knowledge base.
+    preconditions:
+      - sh: 'test -z {{.CLI_ARGS | shellQuote}}'
+        msg: "Pass VERSION=... without arguments after --."
+    cmds:
+      - |
+        version={{.VERSION | default "" | shellQuote}}
+        if [ -z "$version" ]; then
+          # Resolve new releases without the release-age delay or proxy metadata lag.
+          version=$(mise latest --minimum-release-age 0s go42x)
+        fi
+        if [ -z "$version" ]; then
+          printf 'mise did not resolve a go42x release.\n' >&2
+          exit 1
+        fi
+
+        mkdir -p "$BUILD_TMP_DIR"
+        workspace=$(mktemp -d "$PWD/$BUILD_TMP_DIR/go42x-update.XXXXXX")
+        printf 'Updating go42x to %s; workspace: %s\n' "$version" "$workspace"
+        cp -p etc/mise.toml "$workspace/mise.toml"
+        cp -p etc/mise.lock "$workspace/mise.lock"
+        restore_pins() {
+          cp -p "$workspace/mise.toml" etc/mise.toml
+          cp -p "$workspace/mise.lock" etc/mise.lock
+          # tool:update removes the replaced version; reinstall it for the restored pin.
+          mise install --locked go42x || printf 'Run task setup to reinstall the restored go42x.\n' >&2
+          printf 'Restored the previous mise pin and lockfile.\n' >&2
+        }
+
+        if ! task tool:update TOOL=go42x "VERSION=$version"; then
+          restore_pins
+          exit 1
+        fi
+        if ! task --silent x -- agentenv update --json > "$workspace/update.json"; then
+          cat "$workspace/update.json"
+          # Restore only when the command reports that no replacements were applied.
+          if grep -Eq '"result":null|"applied":0[,}]' "$workspace/update.json"; then
+            restore_pins
+          fi
+          exit 1
+        fi
+        cat "$workspace/update.json"
+      - task: x
+        vars:
+          CLI_ARGS: 'agentenv generate'
+      - task: x
+        vars:
+          CLI_ARGS: 'kwb build'
 
   tool:
     desc: "Run a command with the project tools"
-    summary: "Usage: task tool -- COMMAND [ARGS...]"
+    summary: |-
+      Usage: task tool -- COMMAND [ARGS...]
     interactive: true
     silent: true
     preconditions:
@@ -66,22 +158,11 @@ tasks:
     cmds:
       - 'mise exec -- {{.CLI_ARGS}}'
 
-  setup:
-    desc: "install dependencies"
-    cmds:
-      - "mise install --locked"
-      - "go mod download"
-
-  setup:release:
-    desc: "install release dependencies"
-    cmds:
-      - "mise install --locked task goreleaser syft cosign"
-      - "go mod download"
-
-  ## bump | set a mise tool dependency to a version
-  bump:
+  tool:update:
     desc: "Set a mise tool dependency to a version (writes)"
-    summary: "Usage: task bump TOOL=goreleaser VERSION=2.18.1"
+    summary: |-
+      Usage: task tool:update TOOL=<tool> VERSION=<version>
+      Installs the selected tool version, updates etc/mise.toml and etc/mise.lock, and removes its unused versions.
     requires:
       vars:
         - TOOL
@@ -94,6 +175,36 @@ tasks:
     cmds:
       - 'mise use --pin -- {{printf "%s@%s" .TOOL .VERSION | shellQuote}}'
       - 'mise lock -- {{.TOOL | shellQuote}}'
+      - 'mise prune --tools --yes -- {{.TOOL | shellQuote}}'
+
+  setup:
+    desc: "Install pinned project tools and Go modules"
+    summary: |-
+      Usage: task setup
+      Go, mise, and Task must already be installed.
+      Then runs setup:tidy, so versions replaced by new pins do not accumulate.
+    cmds:
+      - "mise install --locked"
+      - "go mod download"
+      - task: setup:tidy
+
+  setup:release:
+    desc: "Install pinned release tools and Go modules"
+    summary: |-
+      Usage: task setup:release
+    cmds:
+      - "mise install --locked goreleaser syft cosign"
+      - "go mod download"
+
+  setup:tidy:
+    desc: "Remove unused tool versions and stale cache files from .tools/ (writes)"
+    summary: |-
+      Usage: task setup:tidy [DRY_RUN=1]
+      Deletes installed versions that no tracked mise configuration selects, then cache files not read within
+      cache_prune_age. Versions used by running processes are kept. DRY_RUN=1 lists what would be removed.
+    cmds:
+      - 'mise prune --tools --yes{{if .DRY_RUN}} --dry-run{{end}}'
+      - 'mise cache prune{{if .DRY_RUN}} --dry-run{{end}}'
 
   # ╭────────────────────----------------──────────╮
   # │                   Testing                    │
@@ -101,6 +212,9 @@ tasks:
 
   test:
     desc: "Run unit and CLI end-to-end tests"
+    summary: |-
+      Usage: task test
+      Runs task test:unit with coverage, then task test:e2e.
     aliases:
       - test:all
     cmds:
@@ -109,8 +223,11 @@ tasks:
 
   # @note -count=1 is needed to prevent caching of test results.
   test:unit:
-    desc: "run unit tests with coverage, or selected packages with race detection"
-    summary: "Usage: task test:unit [-- PACKAGE ...]. Defaults to the full unit suite with coverage."
+    desc: "Run unit tests with race detection and optional coverage"
+    summary: |-
+      Usage: task test:unit [-- PACKAGE ...]
+      Defaults to the full unit suite with coverage. Explicit local packages skip coverage reports; Go test flags are
+      not accepted.
     preconditions:
       - &package_paths
         sh: |
@@ -130,21 +247,29 @@ tasks:
         if [ "$#" -gt 0 ]; then
           exec go test -count=1 -race "$@"
         fi
-        mkdir -p .build
+
+        mkdir -p "$BUILD_REPORTS_DIR"
+
         unit_packages=$(go list ./...)
         unit_exclude_pattern=$(printf '%s\n' mocks tests | paste -sd '|' -)
         unit_packages=$(printf '%s\n' "$unit_packages" | grep -vE "/($unit_exclude_pattern)(/|$)")
+
         # go list returns separate package names; preserve word splitting here.
         # shellcheck disable=SC2086
         go test -count=1 -v -race -covermode=atomic \
           -coverpkg="$(printf '%s\n' "$unit_packages" | paste -sd, -)" \
-          -coverprofile=.build/coverage.out $unit_packages \
+          -coverprofile="$BUILD_REPORTS_DIR/coverage.out" $unit_packages \
           | sed -E 's/(coverage: [0-9.]+% of statements) in .*/\1/'
-        go tool cover -html=.build/coverage.out -o=.build/coverage.html
-        go tool cover -func=.build/coverage.out | grep '^total:'
+
+        go tool cover -html="$BUILD_REPORTS_DIR/coverage.out" -o="$BUILD_REPORTS_DIR/coverage.html"
+        go tool cover -func="$BUILD_REPORTS_DIR/coverage.out" | grep '^total:'
 
   test:e2e:
     desc: "Run CLI tests with race detection in isolated Git repositories"
+    summary: |-
+      Usage: task test:e2e [E2E_TIMEOUT=5m]
+      Builds the CLI once with race detection. Set COMMIT_RELEASE_DIST to test a release bundle instead; prefer
+      task test:release for that.
     cmds:
       - >-
         go run github.com/onsi/ginkgo/v2/ginkgo --race --procs=4 --randomize-all --fail-on-pending --fail-on-empty --trace
@@ -152,8 +277,12 @@ tasks:
 
   test:release:
     desc: "Verify release artifacts and test the native packaged CLI"
+    summary: |-
+      Usage: task test:release [COMMIT_RELEASE_DIST=<dir>]
+      Defaults to BUILD_DIST_DIR. Create artifacts first with task release:snapshot. Relative paths resolve from the
+      repository root.
     env:
-      COMMIT_RELEASE_DIST: '{{.COMMIT_RELEASE_DIST | default ".build/dist"}}'
+      COMMIT_RELEASE_DIST: '{{.COMMIT_RELEASE_DIST | default .BUILD_DIST_DIR}}'
     cmds:
       - task: test:e2e
         vars:
@@ -164,19 +293,49 @@ tasks:
   # │               General workflow               │
   # ╰─────────────────────----------------─────────╯
 
-  build:
-    desc: "build the binary for the current platform or GOOS/GOARCH"
+  # `-N -l` disables compiler optimizations and inlining, which makes debugging easier.
+  run:
+    desc: "Run the application from source"
+    summary: |-
+      Usage: task run [-- APP_ARGS...]
+    interactive: true
     cmds:
-      - "mkdir -p .build"
-      - "go build -mod=readonly -trimpath -buildvcs=false -o .build/commit ."
+      - >-
+        go run -gcflags="all=-N -l" -race
+        . {{.CLI_ARGS}}
 
-  generate:
-    desc: "generate code for all modules"
+  debug:
+    desc: "Run the application with the Delve debugger"
+    summary: |-
+      Usage: task debug [-- APP_ARGS...]
+      Connect your debugger to localhost:2345.
+    interactive: true
+    cmds:
+      - 'mkdir -p "$BUILD_BIN_DIR"'
+      - >-
+        mise exec -- dlv debug .
+        --headless --listen=127.0.0.1:2345 --accept-multiclient --api-version=2
+        --output="$BUILD_BIN_DIR/commit-debug" -- {{.CLI_ARGS}}
+
+  build:
+    desc: "Build a development binary in BUILD_BIN_DIR"
+    summary: |-
+      Usage: task build [-- BUILD_FLAGS...]
+      Builds with race detection and compiler optimizations disabled.
+    cmds:
+      - 'mkdir -p "$BUILD_BIN_DIR"'
+      - >-
+        go build -gcflags="all=-N -l" -race -v
+        {{.CLI_ARGS}} -o "$BUILD_BIN_DIR/commit" .
+
+  generate:code:
+    desc: "Regenerate code and tidy Go dependencies"
+    summary: |-
+      Usage: task generate:code
+      Updates generated files and Go module metadata.
     cmds:
       - "go mod tidy"
-      - |
-        export PATH="{{.TOOLS_BIN}}:$PATH"
-        go generate ./...
+      - "go generate ./..."
 
   # ╭────────────────────----------------──────────╮
   # │                  Formatters                  │
@@ -184,7 +343,8 @@ tasks:
 
   fmt:go:
     desc: "Format explicit Go source files (writes)"
-    summary: "Usage: task fmt:go -- FILE.go [FILE.go ...]"
+    summary: |-
+      Usage: task fmt:go -- FILE.go [FILE.go ...]
     preconditions: &files
       - sh: |
           set -- {{.CLI_ARGS}}
@@ -203,29 +363,32 @@ tasks:
     cmds:
       - |
         set -- {{.CLI_ARGS}}
-        "{{.TOOLS_BIN}}/golangci-lint" fmt --config etc/golangci.yml "$@"
+        mise exec -- golangci-lint fmt --config etc/golangci.yml "$@"
 
   fmt:yaml:
     desc: "Format explicit plain YAML files (writes)"
-    summary: "Usage: task fmt:yaml -- FILE.yaml [FILE.yaml ...]."
+    summary: |-
+      Usage: task fmt:yaml -- FILE.yaml [FILE.yaml ...]
     preconditions: *files
     cmds:
       - |
         set -- {{.CLI_ARGS}}
-        "{{.TOOLS_BIN}}/yamlfmt" -conf etc/yamlfmt.yaml "$@"
+        mise exec -- yamlfmt -conf etc/yamlfmt.yaml "$@"
 
   fmt:json:
     desc: "Format explicit JSON files (writes)"
-    summary: "Usage: task fmt:json -- FILE.json [FILE.json ...]"
+    summary: |-
+      Usage: task fmt:json -- FILE.json [FILE.json ...]
     preconditions: *files
     cmds:
       - |
         set -- {{.CLI_ARGS}}
-        "{{.TOOLS_BIN}}/jsonfmt" -w "$@"
+        mise exec -- jsonfmt -w "$@"
 
   fmt:toml:
     desc: "Format explicit TOML files (writes)"
-    summary: "Usage: task fmt:toml -- FILE.toml [FILE.toml ...]"
+    summary: |-
+      Usage: task fmt:toml -- FILE.toml [FILE.toml ...]
     preconditions: *files
     cmds:
       - |
@@ -236,7 +399,7 @@ tasks:
             *) file="$PWD/$file" ;;
           esac
           # Tombi discovers etc/tombi.toml from its working directory.
-          (cd etc && "{{.TOOLS_BIN}}/tombi" format --offline "$file")
+          (cd etc && mise exec -- tombi format --offline "$file")
         done
 
   # ╭────────────────────----------------──────────╮
@@ -244,56 +407,119 @@ tasks:
   # ╰─────────────────────----------------─────────╯
 
   lint:
-    desc: "Run Go, security, configuration, and workflow checks"
+    desc: "Run code, configuration, and workflow linters"
+    summary: |-
+      Usage: task lint
+      Accepts no arguments; use a lint:* task to select files or packages.
+    preconditions:
+      - sh: |
+          set -- {{.CLI_ARGS}}
+          [ "$#" -eq 0 ]
+        msg: "Use a lint:* task for file or package arguments."
     cmds:
-      - task: lint:go
-      - task: lint:go-security
-      - task: lint:vulnerabilities
-      - task: lint:secrets
-      - task: lint:json
-      - task: lint:yaml
-      - task: lint:toml
-      - task: lint:actions
+      - task: "lint:go"
+      - task: "lint:gosec"
+      - task: "lint:vulnerabilities"
+      - task: "lint:secrets"
+      - task: "lint:json"
+      - task: "lint:yaml"
+      - task: "lint:toml"
+      - task: "lint:actions"
+      - task: "lint:editorconfig"
 
   lint:go:
     desc: "Lint all Go packages, or explicit local packages and subtrees (read only)"
-    summary: "Usage: task lint:go [-- ./internal/cmd ./pkg/kwb/...]"
+    summary: |-
+      Usage: task lint:go [-- ./internal/cli ./pkg/commit/...]
     preconditions:
       - *package_paths
     cmds:
       - |
         set -- {{.CLI_ARGS}}
-        "{{.TOOLS_BIN}}/golangci-lint" config verify --config etc/golangci.yml
-        "{{.TOOLS_BIN}}/golangci-lint" run --config etc/golangci.yml "$@"
+        mise exec -- golangci-lint config verify --config etc/golangci.yml
+        mise exec -- golangci-lint run --config etc/golangci.yml "$@"
 
-  lint:go-security:
-    desc: "Check handwritten Go code with Gosec"
+  lint:nilaway:
+    desc: "Check all Go packages for potential nil panics with NilAway (advisory; not part of lint)"
     cmds:
-      - '"{{.TOOLS_BIN}}/gosec" -terse -exclude-generated -exclude-dir=.build -exclude-dir=.tools ./...'
+      - |
+        go vet -vettool="$(mise which nilaway)" \
+          -include-pkgs=github.com/hasansino/commit \
+          -exclude-file-docstrings='Code generated' \
+          -include-errors-in-files="$(pwd -P)" \
+          -pretty-print=false \
+          -print-full-file-path=true \
+          ./...
+
+  lint:gosec:
+    desc: "Check Go code with gosec"
+    vars:
+      PACKAGE_DIRS:
+        sh: go list -f '{{"{{"}}.Dir{{"}}"}}' ./...
+    cmds:
+      - |
+        set -- {{range splitList "\n" .PACKAGE_DIRS}}{{if .}}{{. | shellQuote}} {{end}}{{end}}
+        mise exec -- gosec -terse -exclude-generated "$@"
 
   lint:vulnerabilities:
     desc: "Check CLI vulnerabilities for all release platforms"
     cmds:
-      - 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "{{.TOOLS_BIN}}/govulncheck" .'
-      - 'CGO_ENABLED=0 GOOS=linux GOARCH=arm64 "{{.TOOLS_BIN}}/govulncheck" .'
-      - 'CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 "{{.TOOLS_BIN}}/govulncheck" .'
-      - 'CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 "{{.TOOLS_BIN}}/govulncheck" .'
+      - 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 mise exec -- govulncheck .'
+      - 'CGO_ENABLED=0 GOOS=linux GOARCH=arm64 mise exec -- govulncheck .'
+      - 'CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 mise exec -- govulncheck .'
+      - 'CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 mise exec -- govulncheck .'
 
   lint:secrets:
-    desc: "Scan Git history for secrets with Gitleaks"
-    cmds:
-      - '"{{.TOOLS_BIN}}/gitleaks" git --config etc/gitleaks.toml --no-banner --redact -v'
-
-  lint:actions:
-    desc: "check GitHub Actions workflows"
+    desc: "Scan Git history, or explicit files, for secrets with Gitleaks"
+    summary: |-
+      Usage: task lint:secrets [-- FILE ...]
+      Defaults to Git history. Explicit files are scanned directly, including ignored and untracked files.
+      Findings are redacted; secret findings and scanner errors fail the task.
     preconditions:
       - *file_paths
     cmds:
-      - '"{{.TOOLS_BIN}}/actionlint" -oneline {{.CLI_ARGS}}'
+      - |
+        set -- {{.CLI_ARGS}}
+        if [ "$#" -eq 0 ]; then
+          mise exec -- gitleaks git --config etc/gitleaks.toml --no-banner --redact -v
+        else
+          for file do
+            printf 'Scanning %s for secrets\n' "$file"
+            mise exec -- gitleaks stdin --config etc/gitleaks.toml --no-banner --redact < "$file"
+          done
+        fi
+
+  lint:actions:
+    desc: "Check all GitHub Actions, or explicit workflow files (read only)"
+    summary: |-
+      Usage: task lint:actions [-- .github/workflows/FILE.yaml ...]
+      Defaults include composite actions in Zizmor.
+    preconditions:
+      - *file_paths
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        mise exec -- actionlint -oneline "$@"
+        if [ "$#" -eq 0 ]; then set -- .; fi
+        mise exec -- zizmor -q --persona regular --min-severity high --min-confidence high \
+          --offline --format plain --color never --no-progress "$@"
+
+  lint:editorconfig:
+    desc: "Check EditorConfig rules for the project, or explicit files (read only)"
+    summary: |-
+      Usage: task lint:editorconfig [-- FILE ...]
+    preconditions:
+      - *file_paths
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        mise exec -- editorconfig-checker -config etc/editorconfig.json "$@"
 
   lint:yaml:
     desc: "Check plain YAML source formatting, or explicit files (read only)"
-    summary: "Usage: task lint:yaml [-- FILE.yaml ...]."
+    summary: |-
+      Usage: task lint:yaml [-- FILE.yaml ...]
+      Defaults to Git source YAML files.
     vars:
       SOURCE_FILES:
         sh: |
@@ -307,13 +533,15 @@ tasks:
         set -- {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}{{range splitList "\x00" .SOURCE_FILES}}{{if .}}{{. | shellQuote}} {{end}}{{end}}{{end}}
         for file do
           if [ -f "$file" ]; then
-            "{{.TOOLS_BIN}}/yamlfmt" -conf etc/yamlfmt.yaml -lint "$file"
+            mise exec -- yamlfmt -conf etc/yamlfmt.yaml -lint "$file"
           fi
         done
 
   lint:json:
     desc: "Check JSON source formatting, or explicit files (read only)"
-    summary: "Usage: task lint:json [-- FILE.json ...]; defaults exclude package-lock.json."
+    summary: |-
+      Usage: task lint:json [-- FILE.json ...]
+      Defaults exclude package-lock.json.
     vars:
       SOURCE_FILES:
         sh: |
@@ -327,13 +555,15 @@ tasks:
         set -- {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}{{range splitList "\x00" .SOURCE_FILES}}{{if .}}{{. | shellQuote}} {{end}}{{end}}{{end}}
         for file do
           if [ -f "$file" ]; then
-            "{{.TOOLS_BIN}}/jsonfmt" "$file"
+            mise exec -- jsonfmt "$file"
           fi
         done
 
   lint:toml:
     desc: "Check TOML source formatting and lint rules, or explicit files (read only)"
-    summary: "Usage: task lint:toml [-- FILE.toml ...]; defaults to Git source files ending in .toml."
+    summary: |-
+      Usage: task lint:toml [-- FILE.toml ...]
+      Defaults to Git source files ending in .toml.
     vars:
       SOURCE_FILES:
         sh: |
@@ -354,8 +584,8 @@ tasks:
             # Tombi discovers etc/tombi.toml from its working directory.
             (
               cd etc
-              "{{.TOOLS_BIN}}/tombi" format --offline --check "$file"
-              "{{.TOOLS_BIN}}/tombi" lint --offline --error-on-warnings "$file"
+              mise exec -- tombi format --offline --check "$file"
+              mise exec -- tombi lint --offline --error-on-warnings "$file"
             )
           fi
         done
@@ -365,30 +595,34 @@ tasks:
   # ╰─────────────────────----------------─────────╯
 
   release:check:
-    desc: "validate GoReleaser configuration"
+    desc: "Validate GoReleaser configuration"
     cmds:
-      - '"{{.TOOLS_BIN}}/goreleaser" check --config etc/goreleaser.yaml'
+      - 'mise exec -- goreleaser check --config etc/goreleaser.yaml'
 
   release:snapshot:
-    desc: "build release artifacts without publishing or signing"
+    desc: "Build release artifacts without publishing or signing"
+    summary: |-
+      Usage: task release:snapshot
+      Run task setup:release first; writes unsigned snapshot artifacts to BUILD_DIST_DIR.
     cmds:
-      - |
-        export PATH="{{.TOOLS_BIN}}:$PATH"
-        goreleaser release --config etc/goreleaser.yaml --snapshot --clean --skip=publish,sign
+      - 'mise exec -- goreleaser release --config etc/goreleaser.yaml --snapshot --clean --skip=publish,sign'
 
   release:local:
-    desc: "build and sign a tagged release without publishing"
+    desc: "Build and sign a tagged release without publishing"
+    summary: |-
+      Usage: task release:local
+      Run task setup:release first; requires a release tag and Cosign authentication. Writes signed artifacts to
+      BUILD_DIST_DIR.
     cmds:
-      - |
-        export PATH="{{.TOOLS_BIN}}:$PATH"
-        goreleaser release --config etc/goreleaser.yaml --clean --skip=publish
+      - 'mise exec -- goreleaser release --config etc/goreleaser.yaml --clean --skip=publish'
 
   release:
-    desc: "build, sign, and publish the validated release (CI only)"
+    desc: "Build, sign, and publish a release (CI only)"
+    summary: |-
+      Usage: task release
+      Invoked by the release workflow with a validated tag and release credentials; requires GITHUB_ACTIONS=true.
     preconditions:
       - sh: '[ "$GITHUB_ACTIONS" = "true" ]'
         msg: "Dispatch the release workflow from master to publish a release."
     cmds:
-      - |-
-        export PATH="{{.TOOLS_BIN}}:$PATH"
-        goreleaser release --config etc/goreleaser.yaml --clean
+      - 'mise exec -- goreleaser release --config etc/goreleaser.yaml --clean'

@@ -360,7 +360,7 @@ func TestAIService_GenerateCommitMessages_LogsSuccessfulProviderDuration(t *test
 	}
 
 	var completionLogs int
-	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
 		var record map[string]any
 		if err := json.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatalf("decode log record %q: %v", line, err)

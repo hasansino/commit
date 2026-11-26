@@ -1,0 +1,120 @@
+---
+
+name: setup-tools
+description: 'Install Task and mise, restore shared tools, and optionally populate their cache'
+
+inputs:
+  setup-task:
+    description: 'Setup task to run after installing mise; mutually exclusive with install-args'
+    required: false
+    default: ''
+  install-args:
+    description: 'Arguments for mise install; empty installs mise without project tools'
+    required: false
+    default: ''
+  cache:
+    description: 'Restore cached mise and project tools'
+    required: false
+    default: 'true'
+  cache-key-prefix:
+    description: 'Prefix for the project tools cache key'
+    required: false
+    default: 'project-tools-v3'
+  cache-save:
+    description: 'Save tools after setup; reserved for the trusted cache preparation workflow'
+    required: false
+    default: 'false'
+
+outputs:
+  cache-hit:
+    description: 'Whether the exact tools cache was restored'
+    value: ${{ steps.tools-cache.outputs.cache-hit }}
+
+# Callers prepare Go when the selected tools or setup task require it.
+runs:
+  using: composite
+  steps:
+    - name: 'Install Task'
+      uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+      with:
+        version: '3.54.0'
+    # -----
+    - name: 'Configure project tooling'
+      shell: bash
+      run: task env:export >> "$GITHUB_ENV"
+    # -----
+    - name: 'Read mise configuration and cache identity'
+      id: mise-config
+      shell: bash
+      env:
+        PROJECT_INSTALL_ARGS: ${{ inputs.install-args }}
+        PROJECT_SETUP_TASK: ${{ inputs.setup-task }}
+        CACHE_PREFIX: ${{ inputs.cache-key-prefix }}
+        PROJECT_CACHE_OS: ${{ runner.os }}
+        PROJECT_CACHE_ARCHITECTURE: ${{ runner.arch }}
+        TOOLS_HASH: ${{ hashFiles('etc/mise.toml', 'etc/mise.lock') }}
+        SETUP_HASH: ${{ hashFiles('Taskfile.yaml', '.github/actions/setup-tools/action.yaml') }}
+      run: |
+        set -euo pipefail
+        if [[ -n "$PROJECT_INSTALL_ARGS" && -n "$PROJECT_SETUP_TASK" ]]; then
+          echo '::error::Select setup-task or install-args, not both.'
+          exit 1
+        fi
+        mise_version=$(sed -n 's/^min_version = "\([^"]*\)"$/\1/p' etc/mise.toml)
+        if [[ ! "$mise_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo '::error::etc/mise.toml must define min_version as an exact mise release.'
+          exit 1
+        fi
+        echo "version=$mise_version" >> "$GITHUB_OUTPUT"
+
+        # Every tool selection restores the same complete project tools archive.
+        go_version=$(awk '/^go / {version=$2} /^toolchain go/ {toolchain=substr($2, 3)} END {print toolchain ? toolchain : version}' go.mod)
+        if [[ ! "$go_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo '::error::go.mod must select an exact Go version for the tools cache.'
+          exit 1
+        fi
+        cache_base="$CACHE_PREFIX-$PROJECT_CACHE_OS-${ImageOS:-unknown}-$PROJECT_CACHE_ARCHITECTURE-go$go_version"
+        echo "cache-key=$cache_base-$TOOLS_HASH-$SETUP_HASH" >> "$GITHUB_OUTPUT"
+        {
+          echo 'restore-keys<<TOOLS_CACHE_KEYS'
+          echo "$cache_base-$TOOLS_HASH-"
+          echo "$cache_base-"
+          echo 'TOOLS_CACHE_KEYS'
+        } >> "$GITHUB_OUTPUT"
+    # -----
+    - name: 'Restore project tools'
+      id: tools-cache
+      if: inputs.cache == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.MISE_DATA_DIR }}
+        key: ${{ steps.mise-config.outputs.cache-key }}
+        restore-keys: ${{ steps.mise-config.outputs.restore-keys }}
+    # -----
+    - name: 'Install mise and selected tools'
+      if: inputs.cache-save != 'true' || steps.tools-cache.outputs.cache-hit != 'true'
+      uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      with:
+        version: ${{ steps.mise-config.outputs.version }}
+        install: ${{ inputs.install-args != '' }}
+        install_args: ${{ inputs.install-args }}
+        cache: false
+    # -----
+    - name: 'Run project setup'
+      if: inputs.setup-task != '' && (inputs.cache-save != 'true' || steps.tools-cache.outputs.cache-hit != 'true')
+      shell: bash
+      env:
+        PROJECT_SETUP_TASK: ${{ inputs.setup-task }}
+      run: task "$PROJECT_SETUP_TASK"
+    # -----
+    - name: 'Remove unused tool versions and stale cache files before caching'
+      if: inputs.cache == 'true' && inputs.cache-save == 'true' && steps.tools-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: task setup:tidy
+    # -----
+    - name: 'Save prepared project tools'
+      if: inputs.cache == 'true' && inputs.cache-save == 'true' && steps.tools-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.MISE_DATA_DIR }}
+        key: ${{ steps.mise-config.outputs.cache-key }}

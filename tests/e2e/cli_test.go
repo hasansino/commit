@@ -86,6 +86,7 @@ var _ = Describe("CLI contract", func() {
 		} else {
 			Expect(result.Stdout).To(MatchRegexp(`(?m)^Version:\s+\S+`))
 		}
+		Expect(result.Stdout).To(MatchRegexp(`(?m)^Commit:\s+\S+`))
 		Expect(result.Stdout).To(MatchRegexp(`(?m)^Go:\s+go\d+`))
 		Expect(result.Stdout).To(ContainSubstring("OS/Arch: " + runtime.GOOS + "/" + runtime.GOARCH))
 		Expect(result.Stderr).To(BeEmpty())

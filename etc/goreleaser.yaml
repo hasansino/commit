@@ -28,9 +28,11 @@ builds:
       - -v
       - -trimpath
       - -buildvcs=false
+      - -mod=readonly
     ldflags:
       - -s -w
       - -X github.com/hasansino/commit/internal/version.xBuildVersion={{ .Version }}
+      - -X github.com/hasansino/commit/internal/version.xBuildCommit={{ .FullCommit }}
 
 archives:
   - id: commit
@@ -64,9 +66,9 @@ homebrew_casks:
       post:
         # Release checksums are signed with Sigstore; macOS binaries are not Apple-notarized.
         # Limit quarantine removal to the installed executable.
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/commit"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/commit"]
           end
 
 nfpms:

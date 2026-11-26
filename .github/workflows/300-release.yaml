@@ -111,21 +111,26 @@ jobs:
                   branch: 'master',
                   event: 'push',
                   head_sha: sourceSha,
-                  status: 'completed',
                   per_page: 100,
                 },
               );
-              ciRun = runs.find((run) =>
+              const matchingRuns = runs.filter((run) =>
                 run.event === 'push' &&
                 run.head_branch === 'master' &&
                 run.head_sha === sourceSha &&
-                run.head_repository?.full_name === repository &&
-                run.status === 'completed' &&
-                run.conclusion === 'success'
+                run.head_repository?.full_name === repository
               );
-              if (ciRun) {
+              const latestRun = matchingRuns.sort((a, b) => b.run_number - a.run_number)[0];
+              if (latestRun?.status === 'completed') {
+                if (latestRun.conclusion !== 'success') {
+                  throw new Error(`Unified CI for ${sourceSha} completed with ${latestRun.conclusion}: ` +
+                    latestRun.html_url);
+                }
+
+                ciRun = latestRun;
                 break;
               }
+
               if (attempt < maxAttempts) {
                 core.info(`Waiting for successful Unified CI for ${sourceSha} (${attempt}/${maxAttempts}); ` +
                   `retrying in ${pollIntervalMs / 1000} seconds`);
@@ -157,11 +162,6 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    env:
-      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-      MISE_DATA_DIR: ${{ github.workspace }}/.tools
-      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
-      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
     steps:
       - name: 'Checkout validated release commit'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -170,14 +170,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: 'go.mod'
+        uses: ./.github/actions/setup-go
       - name: 'Install pinned release tools'
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: --locked task goreleaser syft cosign
+          setup-task: setup:release
       - name: 'Validate GoReleaser configuration'
         run: task release:check
       - name: 'Validate Homebrew token and tap'
@@ -219,7 +216,8 @@ jobs:
           git push --no-follow-tags "git@github.com:$GITHUB_REPOSITORY.git" \
             "refs/tags/$RELEASE_VERSION:refs/tags/$RELEASE_VERSION"
       - name: 'Build, sign, and publish release'
-        run: task release
+        # The workflow writes its own release summary below.
+        run: env -u GITHUB_STEP_SUMMARY task release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_GITHUB_TOKEN: ${{ needs.validate-release.outputs.is_prerelease == 'false' && secrets.HOMEBREW_TAP_GITHUB_TOKEN

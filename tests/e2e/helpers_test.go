@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -95,6 +96,9 @@ func startCLI(
 
 	session, err := gexec.Start(command, GinkgoWriter, GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred())
+	if session == nil {
+		Fail("gexec.Start returned no session")
+	}
 	DeferCleanup(func() { stopSession(session) })
 	return session
 }
@@ -166,9 +170,7 @@ func childEnvironment(options runOptions) []string {
 			}
 		}
 	}
-	for key, value := range options.Environment {
-		overrides[key] = value
-	}
+	maps.Copy(overrides, options.Environment)
 
 	// Force all non-fixture HTTP traffic through a local rejecting proxy. Apply
 	// these last so future test options cannot accidentally enable real network access.
@@ -203,9 +205,7 @@ func childEnvironment(options runOptions) []string {
 			environment[key] = value
 		}
 	}
-	for key, value := range overrides {
-		environment[key] = value
-	}
+	maps.Copy(environment, overrides)
 
 	keys := make([]string, 0, len(environment))
 	for key := range environment {

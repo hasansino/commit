@@ -7,7 +7,7 @@ import (
 	"github.com/hasansino/commit/pkg/commit/models"
 )
 
-//go:generate mockgen -source $GOFILE -package mocks -destination mocks/mocks.go
+//go:generate go tool mockgen -source $GOFILE -package mocks -destination mocks/mocks.go
 
 type providerAccessor interface {
 	Name() string

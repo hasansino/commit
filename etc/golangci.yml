@@ -16,6 +16,11 @@ formatters:
     - gci # stricter import order
 
   settings:
+    gofmt:
+      rewrite-rules:
+        - pattern: 'interface{}'
+          replacement: any
+
     golines:
       max-len: 120
 
@@ -42,6 +47,7 @@ linters:
     - staticcheck
     - unused
     - sloglint
+    - modernize
 
   # https://golangci-lint.run/usage/linters/#disabled-by-default
   disable:

@@ -1,0 +1,62 @@
+---
+
+name: codeql-publish
+
+# Unified CI runs a read-only CodeQL check for every change. This isolated
+# workflow analyzes and publishes every commit pushed to master.
+
+on:
+  push:
+    branches:
+      - master
+
+permissions: {}
+
+concurrency:
+  group: codeql-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql-publish:
+    name: codeql-publish
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: 'Checkout master commit'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Setup Go'
+        uses: ./.github/actions/setup-go
+        with:
+          # Share compilation results with the CodeQL analysis job.
+          cache-scope: codeql
+      - name: 'Set up project tooling'
+        uses: ./.github/actions/setup-tools
+        with:
+          # CodeQL uses Go without installing mise-managed tools.
+          cache: false
+      - name: 'Initialize CodeQL'
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: go
+      - name: 'Build'
+        uses: github/codeql-action/autobuild@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+      - name: 'Generate CodeQL results'
+        id: codeql-analysis
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          output: codeql-results
+          category: '.github/workflows/100-unified-workflow.yaml:codeql'
+          upload: never
+          upload-database: false
+      - name: 'Publish CodeQL results to code scanning'
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: ${{ steps.codeql-analysis.outputs.sarif-output }}
+          category: '.github/workflows/100-unified-workflow.yaml:codeql'

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -96,15 +97,15 @@ func (p *Claude) Ask(ctx context.Context, prompt string) ([]string, error) {
 		return nil, fmt.Errorf("no text content received")
 	}
 
-	var text string
+	var text strings.Builder
 	for _, content := range message.Content {
 		if content.Type == "text" {
 			textBlock := content.AsText()
-			text += textBlock.Text
+			text.WriteString(textBlock.Text)
 		}
 	}
 
-	return []string{text}, nil
+	return []string{text.String()}, nil
 }
 
 func validStopReason(reason anthropic.StopReason) bool {

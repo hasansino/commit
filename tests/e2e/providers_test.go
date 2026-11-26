@@ -411,7 +411,7 @@ var _ = Describe("Prompt construction", func() {
 				trace, err := os.ReadFile(tracePath)
 				Expect(err).NotTo(HaveOccurred())
 				zeroContextDiffs := 0
-				for _, line := range strings.Split(strings.TrimSpace(string(trace)), "\n") {
+				for line := range strings.SplitSeq(strings.TrimSpace(string(trace)), "\n") {
 					var event struct {
 						Event string   `json:"event"`
 						Argv  []string `json:"argv"`

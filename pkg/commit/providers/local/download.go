@@ -372,7 +372,10 @@ func validateChecksum(checksum string) error {
 
 func isHTTPURL(value string) bool {
 	parsed, err := url.Parse(value)
-	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https")
+	if err != nil {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
 }
 
 func isHuggingFaceHost(host string) bool {

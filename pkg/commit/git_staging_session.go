@@ -651,8 +651,8 @@ func acquirePathLock(path, description string) (*os.File, error) {
 
 func discardLocks(locks []*os.File) error {
 	var errs []error
-	for index := len(locks) - 1; index >= 0; index-- {
-		errs = append(errs, discardIndexLock(locks[index]))
+	for _, lock := range slices.Backward(locks) {
+		errs = append(errs, discardIndexLock(lock))
 	}
 	return errors.Join(errs...)
 }

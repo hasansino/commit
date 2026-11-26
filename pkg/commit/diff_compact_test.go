@@ -125,7 +125,7 @@ func TestCompactUnifiedDiff(t *testing.T) {
 		diff := "diff --git f f\n--- f\n+++ f\n@@ -1,200 +1,201 @@\n" +
 			strings.Repeat("-ancien café 完整\n", 200) + long + strings.Repeat("+nouveau café 完整\n", 200)
 		got := requireCompactDiff(t, diff, 1024)
-		for _, line := range strings.Split(got, "\n") {
+		for line := range strings.SplitSeq(got, "\n") {
 			if strings.HasPrefix(line, "-ancien") && line != "-ancien café 完整" ||
 				strings.HasPrefix(line, "+nouveau") && line != "+nouveau café 完整" {
 				t.Errorf("partial line: %q", line)

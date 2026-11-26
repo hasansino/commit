@@ -422,8 +422,7 @@ func (s *Service) processPostCommit(ctx context.Context, commitMessage string) e
 			return fmt.Errorf("tag creation canceled after commit: %w", err)
 		}
 		if err := s.gitOps.CreateTag(ctx, newTag, commitMessage); err != nil {
-			var outcome *TagCreationOutcomeError
-			if errors.As(err, &outcome) {
+			if outcome, ok := errors.AsType[*TagCreationOutcomeError](err); ok {
 				if outcome.Outcome == TagCreationCreated {
 					s.logger.WarnContext(
 						ctx,

@@ -16,6 +16,7 @@ func newVersionCommand() *cobra.Command {
 		Long:  `Version information`,
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Printf("Version: %s\n", version.GetVersion())
+			fmt.Printf("Commit:  %s\n", version.GetCommit())
 			fmt.Printf("Go:      %s\n", runtime.Version())
 			fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 		},

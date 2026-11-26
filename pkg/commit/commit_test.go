@@ -154,7 +154,7 @@ func TestService_Execute_NoProviders(t *testing.T) {
 	err := service.Execute(ctx)
 
 	if err == nil {
-		t.Error("Execute() with no providers should return error")
+		t.Fatal("Execute() with no providers should return error")
 	}
 
 	// Check if error contains expected message - the exact error depends on execution path
@@ -892,8 +892,7 @@ func TestService_Execute(t *testing.T) {
 func TestService_Execute_PropagatesContextAndUsesCommittedMessage(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	git := mocks.NewMockgitOperationsAccessor(ctrl)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	session := &models.StagingSessionState{Files: []string{"file.go"}}
 	const (

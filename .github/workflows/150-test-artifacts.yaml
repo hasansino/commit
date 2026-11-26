@@ -44,25 +44,15 @@ jobs:
           - runs_on: macos-15
             goos: darwin
             goarch: arm64
-    env:
-      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-      MISE_DATA_DIR: ${{ github.workspace }}/.tools
-      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
-      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
     steps:
       - name: 'Checkout repository'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: 'go.mod'
-      - name: 'Install pinned Task'
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
-        with:
-          version: '2026.9.1'
-          install_args: --locked task
+        uses: ./.github/actions/setup-go
+      - name: 'Install mise and Task'
+        uses: ./.github/actions/setup-tools
       - name: 'Validate native runner target'
         env:
           EXPECTED_GOOS: ${{ matrix.goos }}
@@ -75,7 +65,7 @@ jobs:
         with:
           artifact-ids: ${{ inputs.artifact_id }}
           merge-multiple: true
-          path: .build/dist
+          path: ${{ env.BUILD_DIST_DIR }}
       - name: 'Verify artifacts and test the packaged CLI'
         run: task test:release
         env:

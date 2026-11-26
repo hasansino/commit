@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"google.golang.org/genai"
@@ -99,14 +100,14 @@ func (p *Gemini) Ask(ctx context.Context, prompt string) ([]string, error) {
 		return nil, fmt.Errorf("no content received")
 	}
 
-	var text string
+	var text strings.Builder
 	for _, part := range candidate.Content.Parts {
 		if part.Text != "" {
-			text += part.Text
+			text.WriteString(part.Text)
 		}
 	}
 
-	return []string{text}, nil
+	return []string{text.String()}, nil
 }
 
 func validFinishReason(reason genai.FinishReason) bool {

@@ -72,7 +72,11 @@ func NewLocal(logger *slog.Logger) *Local {
 	}
 
 	contextSize, contextErr := positiveIntEnv("LOCAL_CONTEXT_SIZE", defaultContextSize)
-	if contextSize < 0 || contextSize > math.MaxUint32 {
+	// Convert only inside the range check, so the uint32 conversion cannot truncate.
+	var contextSize32 uint32
+	if contextSize >= 0 && contextSize <= math.MaxUint32 {
+		contextSize32 = uint32(contextSize)
+	} else {
 		contextErr = fmt.Errorf("LOCAL_CONTEXT_SIZE must fit in an unsigned 32-bit integer")
 		contextSize = 0
 	}
@@ -83,7 +87,7 @@ func NewLocal(logger *slog.Logger) *Local {
 		modelSource:    modelSource,
 		expectedSHA256: strings.ToLower(expectedSHA256),
 		cacheDir:       cacheDir,
-		contextSize:    uint32(contextSize),
+		contextSize:    contextSize32,
 		maxTokens:      maxTokens,
 		timeout:        defaultTimeout,
 		httpClient:     http.DefaultClient,

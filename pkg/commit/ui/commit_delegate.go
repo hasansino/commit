@@ -139,10 +139,7 @@ func (d *commitDelegate) Render(w io.Writer, m list.Model, index int, item list.
 		// - List's internal padding/margins (approx 4)
 		// - Border (1)
 		// - Our padding (3)
-		calculatedWidth := m.Width() - 8
-		if calculatedWidth < 20 {
-			calculatedWidth = 20 // Minimum width
-		}
+		calculatedWidth := max(m.Width()-8, 20) // Keep a minimum width.
 
 		selectedStyle := lipgloss.NewStyle().
 			BorderLeft(true).

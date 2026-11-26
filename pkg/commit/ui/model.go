@@ -307,10 +307,7 @@ func (m Model) View() string {
 // renderFooter renders the checkbox footer
 func (m Model) renderFooter() string {
 	// Calculate available width for footer
-	availableWidth := m.width - (PaddingHorizontal * 2)
-	if availableWidth < 40 {
-		availableWidth = 40 // Minimum width
-	}
+	availableWidth := max(m.width-(PaddingHorizontal*2), 40) // Keep a minimum width.
 
 	footerStyle := lipgloss.NewStyle().
 		BorderTop(true).
@@ -437,10 +434,7 @@ func (m Model) renderManualMode() string {
 	// - Border (2 characters)
 	// - Internal padding (2 characters)
 	maxInputWidth := m.width - (PaddingHorizontal * 2) - 4
-	inputWidth := min(ManualInputWidth, maxInputWidth)
-	if inputWidth < 20 {
-		inputWidth = 20 // Minimum usable width
-	}
+	inputWidth := max(min(ManualInputWidth, maxInputWidth), 20) // Keep a minimum usable width.
 
 	inputStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -490,13 +484,6 @@ func (m Model) renderManualMode() string {
 	b.WriteString(helpStyle.Render(ManualInputHelp))
 
 	return b.String()
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // GetFinalChoice returns the selected commit message

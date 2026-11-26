@@ -131,7 +131,7 @@ func (g *gitOperations) getLatestTagNative(ctx context.Context) (string, error) 
 	}
 
 	var tags []nativeSemverTag
-	for _, name := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
+	for name := range strings.SplitSeq(strings.TrimSuffix(string(output), "\n"), "\n") {
 		if tag, ok := parseNativeSemverTag(name); ok {
 			tags = append(tags, tag)
 		}
@@ -371,7 +371,7 @@ func (g *gitOperations) nativeFallbackRemote(ctx context.Context) (string, error
 	}
 
 	var remotes []string
-	for _, remote := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
+	for remote := range strings.SplitSeq(strings.TrimSuffix(string(output), "\n"), "\n") {
 		if remote != "" {
 			remotes = append(remotes, remote)
 		}
@@ -503,7 +503,7 @@ func (g *gitOperations) nativeMergeRequestURL(
 	if err != nil {
 		return ""
 	}
-	for _, pushURL := range strings.Split(strings.TrimSuffix(string(effectivePushURLs), "\n"), "\n") {
+	for pushURL := range strings.SplitSeq(strings.TrimSuffix(string(effectivePushURLs), "\n"), "\n") {
 		pushInfo, hosted := parseNativeHostedPushURL(pushURL)
 		if hosted && !sameNativeRemoteRepository(remoteInfo, pushInfo) {
 			return ""
